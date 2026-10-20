@@ -109,7 +109,7 @@ class SelectMode():
             await editMessage(text, self._reply, buttons)
 
     def _captions(self, mode: str = None):
-        msg = '<b>VIDEO TOOLS SETTINGS</b>'
+        msg = '<b>🎬 VIDEO TOOLS STUDIO</b>\n<blockquote>Fine-tune your media with a clear, guided workflow.</blockquote>'
         if vidmode := VID_MODE.get(self.mode):
             msg += f'\nMode: <b>{vidmode}</b>'
         if self.newname:
@@ -181,7 +181,7 @@ class SelectMode():
                 elif self.extra_data.get('cuts'):
                     cuts = ', '.join(f"{a}-{b}" for a, b in self.extra_data['cuts'])
                     msg += f'\nCuts: <b>{cuts}</b>'
-        msg += f'\n\n<i>Time Out: {get_readable_time(900 - (time()-self._time))}</i>'
+        msg += f'\n\n<blockquote>⏳ <b>Session time left:</b> {get_readable_time(max(0, 900 - (time()-self._time)))}\nTap <b>Done</b> when your settings are ready.</blockquote>'
         return msg
 
     async def list_buttons(self, mode: str=''):
@@ -201,14 +201,14 @@ class SelectMode():
                 split_size = self.extra_data.get('split_size', 1024 ** 3)
                 for size, label in [(500 * 1024**2, '500 MB'), (1024**3, '1 GB'), (2 * 1024**3, '2 GB'), (4 * 1024**3, '4 GB')]:
                     buttons.data_button(f"{'✅ ' if split_size == size else ''}{label}", f'vidtool binary_size {size}', 'header')
-            buttons.data_button(f"{'✅ ' if self.multi_vt else ''}MULTI VT", 'vidtool multivt', 'header')
+            buttons.data_button(f"{'✅ ' if self.multi_vt else ''}🧩 Multi-step", 'vidtool multivt', 'header')
             buttons.data_button(f'{"✅ " if self.newname else ""}Rename', 'vidtool rename', 'header')
-            buttons.data_button('Cancel', 'vidtool cancel', 'footer')
+            buttons.data_button('✖ Cancel', 'vidtool cancel', 'footer')
             # Rename is a complete selectable operation even though it does not
             # use self.mode. Keep DONE visible after the user enters the name so
             # the operation only starts when the user explicitly presses DONE.
             if self.mode or self.newname:
-                buttons.data_button('Done', 'vidtool done', 'footer')
+                buttons.data_button('✅ Done', 'vidtool done', 'footer')
             if self.mode in ('vid_sub', 'watermark') and await CustomFilters.sudo('', self.listener.message):
                 hardsub = self.extra_data.get('hardsub')
                 buttons.data_button(f"{'✅ ' if hardsub else ''}Hardsub", 'vidtool hardsub', 'header')
@@ -237,7 +237,7 @@ class SelectMode():
                 if colour:
                     buttons.data_button('Font Colour', 'vidtool fontstyle fontcolour', position)
                 buttons.data_button('<<', f'vidtool {cb}', 'footer')
-                buttons.data_button('Done', 'vidtool done', 'footer')
+                buttons.data_button('✅ Done', 'vidtool done', 'footer')
 
             match mode:
                 case 'subtitle_languages':
@@ -252,13 +252,13 @@ class SelectMode():
                     if (page + 1) * per_page < len(VT_SUBTITLE_LANGUAGES):
                         buttons.data_button('Next ▶', f'vidtool subtitle_page {page + 1}', 'footer')
                     buttons.data_button('Back', 'vidtool back', 'footer')
-                    buttons.data_button('Done', 'vidtool done', 'footer')
+                    buttons.data_button('✅ Done', 'vidtool done', 'footer')
                 case 'merge_mode':
                     merge_mode = self.extra_data.get('merge_mode', 'normal')
                     buttons.data_button(f"{'✅ ' if merge_mode == 'normal' else ''}Normal Mode", 'vidtool merge_mode normal')
                     buttons.data_button(f"{'✅ ' if merge_mode == 'advanced' else ''}Advanced Mode", 'vidtool merge_mode advanced')
                     buttons.data_button('<<', 'vidtool back', 'footer')
-                    buttons.data_button('Done', 'vidtool done', 'footer')
+                    buttons.data_button('✅ Done', 'vidtool done', 'footer')
                 case 'remove_ads_names':
                     presets = self.extra_data.get('presets') or ([self.extra_data.get('preset')] if self.extra_data.get('preset') else [])
                     buttons.data_button(f"{'✅ ' if 'top' in presets else ''}Top Banner", 'vidtool rmads top')
@@ -274,25 +274,25 @@ class SelectMode():
                     if self.extra_data.get('cuts'):
                         buttons.data_button('Clear Cuts', 'vidtool rmads clearcuts', 'header')
                     buttons.data_button('<<', 'vidtool back', 'footer')
-                    buttons.data_button('Done', 'vidtool done', 'footer')
+                    buttons.data_button('✅ Done', 'vidtool done', 'footer')
                 case 'subsync':
                     buttons.data_button('Manual', 'vidtool sync_manual')
                     buttons.data_button('Auto', 'vidtool sync_auto')
                 case 'audio_delay':
                     buttons.data_button('<<', 'vidtool back', 'footer')
-                    buttons.data_button('Done', 'vidtool done', 'footer')
+                    buttons.data_button('✅ Done', 'vidtool done', 'footer')
                 case 'quality':
                     bnum = 3
                     [buttons.data_button(f"{'✅ ' if self.extra_data.get('quality') == key else ''}{key}", f'vidtool quality {key}') for key in ['1080p', '720p', '540p', '480p', '360p']]
                     buttons.data_button('<<', 'vidtool back', 'footer')
-                    buttons.data_button('Done', 'vidtool done', 'footer')
+                    buttons.data_button('✅ Done', 'vidtool done', 'footer')
                 case 'popupwm':
                     bnum, popupwm = 5, self.extra_data.get('popupwm', 0)
                     if popupwm:
                         buttons.data_button('Reset', 'vidtool popupwm 0', 'header')
                     [buttons.data_button(f"{'✅ ' if popupwm == key else ''}{key}", f'vidtool popupwm {key}') for key in range(2, 21, 2)]
                     buttons.data_button('<<', 'vidtool back', 'footer')
-                    buttons.data_button('Done', 'vidtool done', 'footer')
+                    buttons.data_button('✅ Done', 'vidtool done', 'footer')
                 case 'wmsize':
                     bnum = 3
                     [buttons.data_button(str(btn), f'vidtool wmsize {btn}') for btn in [5, 10, 15, 20, 25, 30]]

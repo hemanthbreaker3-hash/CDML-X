@@ -313,9 +313,36 @@ class TaskListener(TaskConfig):
                 from ..telegram_helper.filters import CustomFilters
                 gid = token_urlsafe(12)
                 mode_name = getattr(self, "vt_mode", None) or self.vidMode[0]
-                # Audio Split must see extracted media, not an archive container.
-                # This also expands folders that contain nested ZIP/7z/tar archives.
-                if mode_name == "audio_split":
+                # Media-processing operations must receive actual media files, not an
+                # archive container. Explicit Extract keeps its own semantics. This
+                # fixes -vt on ZIP/7z/RAR/TAR inputs for video, audio and subtitle tools.
+                archive_exts = (".zip", ".7z", ".rar", ".tar", ".gz", ".xz", ".bz2", ".001")
+                media_modes = {
+                    "vid_sub", "subsync", "compress", "convert", "watermark",
+                    "remove_ads_names", "trim", "audio_swap", "audio_track",
+                    "audio_export", "audio_split", "subtitle_translate",
+                    "audio_to_subtitle", "video_audio_sync", "audio_channel",
+                    "subtitle_swap", "subtitle_rename", "rmstream", "rename",
+                }
+                archive_prepared = False
+                if mode_name in media_modes and ospath.splitext(dl_path)[1].lower() in archive_exts:
+                    try:
+                        extracted_path = await self.proceed_extract(dl_path, gid)
+                        if self.is_cancelled or not extracted_path:
+                            return
+                        dl_path = str(extracted_path)
+                        self.extract = False
+                        self.is_file = await aiopath.isfile(dl_path)
+                        await self._set_name_from_path(dl_path, self.up_dir or self.dir)
+                        self.size = await get_path_size(dl_path)
+                        archive_prepared = True
+                        LOGGER.info("Video Tools input prepared from archive (mode=%s, path=%s)", mode_name, dl_path)
+                    except Exception:
+                        LOGGER.error("Video Tools archive preparation failed for %s", mode_name, exc_info=True)
+                        await self.on_upload_error("Video Tools could not extract the input archive. Check the archive and make sure extraction tools are installed.")
+                        return
+                # Audio Split also supports folder tasks and must see extracted media.
+                if mode_name == "audio_split" and not archive_prepared:
                     try:
                         if not self.is_nzb:
                             extracted_path = await self.proceed_extract(dl_path, gid)

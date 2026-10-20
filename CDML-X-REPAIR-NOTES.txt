@@ -1,0 +1,7 @@
+CDML-X repair notes (2026-10-20)
+
+1. /restart now validates options and presents a clearer confirmation. Use /restart for a full process replacement or /restart -s for a soft module reload. Confirmation callbacks validate their payload before acting.
+2. /taskuser is self-service for any user in DMs and groups. Custom task-limit input is accepted only from that same user in the same chat as the menu, and invalid values/timeouts produce feedback.
+3. -vt media tools now extract archive inputs before media-specific operations (except the explicit Extract operation), so video/audio/subtitle tools do not try to feed a ZIP/7z/RAR/TAR container directly to FFmpeg.
+
+Runtime note: video/audio/subtitle tools require compatible FFmpeg/ffprobe binaries. Audio-to-subtitle also requires the Python dependencies in requirements.txt and network access for translation. Actual media integration should be tested on the target VPS with a sample file; static checks cannot guarantee external binary availability.

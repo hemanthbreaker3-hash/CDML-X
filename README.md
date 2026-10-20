@@ -84,3 +84,10 @@ journalctl -u bgutil-ytdlp-pot-provider -f
 - Ensure `BOT_TOKEN`, `TELEGRAM_API`, `TELEGRAM_HASH`, `OWNER_ID`, and `DATABASE_URL` are valid.
 - If a port is already in use, identify the process before stopping anything.
 - Re-run `./one-click-deploy.sh` from the project directory after correcting configuration.
+
+
+### Command and Video Tools notes
+
+- `/restart` opens a confirmation for a full bot-process restart. `/restart -s` requests a soft module reload. Both remain restricted to the owner/sudo list.
+- `/taskuser` is available to regular users in private chats and groups to inspect their own queue and adjust their own task limit within the configured admin cap. Custom input must be sent in the same chat where the menu was opened.
+- `/mirror -vt URL` (or the equivalent leech command with `-vt`) opens the interactive Video Tools selector. Archive inputs are extracted before applicable video/audio/subtitle processing. Keep FFmpeg and ffprobe installed and reachable in `PATH`; audio-to-subtitle additionally needs the declared Whisper/translation dependencies.

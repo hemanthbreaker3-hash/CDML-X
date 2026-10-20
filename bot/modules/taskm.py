@@ -194,9 +194,15 @@ async def taskm_callback(client, query):
         event_done = bot_loop.create_future()
         user_input = []
 
+        origin_chat_id = query.message.chat.id
+
         async def limit_filter(_, __, event):
-            u = event.from_user or event.sender_chat
-            return bool(u and u.id == target_user_id and event.chat.type == ChatType.PRIVATE and event.text)
+            u = event.from_user
+            return bool(
+                u and u.id == target_user_id
+                and event.chat and event.chat.id == origin_chat_id
+                and event.text and not event.text.startswith('/')
+            )
 
         async def limit_handler(_, msg):
             user_input.append(msg.text.strip())
@@ -271,14 +277,12 @@ def build_taskuser_view(user_id, from_user):
 
 @new_task
 async def taskuser_command(client, message):
-    if message.chat.type != ChatType.PRIVATE:
-        await send_message(
-            message,
-            "<blockquote>The <code>/taskuser</code> command works ONLY in Direct Messages (DM)!</blockquote>",
-        )
+    # Self-service command: available to every user in private chats and groups.
+    # In groups, the menu and any custom limit input remain bound to the caller.
+    if not message.from_user:
+        await send_message(message, "<blockquote>Please run <code>/taskuser</code> from your personal Telegram account.</blockquote>")
         return
-
-    user_id = message.from_user.id if message.from_user else 0
+    user_id = message.from_user.id
     admin_max = safe_int(Config.USER_MAX_TASKS)
 
     args = message.text.split(maxsplit=1)
@@ -345,15 +349,21 @@ async def taskuser_callback(client, query):
         await query.answer()
         buttons = ButtonMaker()
         buttons.data_button("◀️ Back", f"taskuser ref {target_user_id}", position="footer")
-        prompt = f"<b>✏️ Set Custom Task Limit:</b>\nPlease send your desired task limit (1-{admin_max if admin_max > 0 else 'infinity'}).\n⏱️ <i>Timeout: 30s</i>"
+        prompt = f"<b>✏️ Personal Task Limit</b>\nSend a number from <code>1</code> to <code>{admin_max if admin_max > 0 else 'your available limit'}</code> in this chat.\n\n<blockquote>⏱️ This prompt expires in 30 seconds.\n🔒 Only your own message is accepted.</blockquote>"
         await edit_message(query.message, prompt, buttons.build_menu(1))
 
         event_done = bot_loop.create_future()
         user_input = []
 
+        origin_chat_id = query.message.chat.id
+
         async def limit_filter(_, __, event):
-            u = event.from_user or event.sender_chat
-            return bool(u and u.id == target_user_id and event.chat.type == ChatType.PRIVATE and event.text)
+            u = event.from_user
+            return bool(
+                u and u.id == target_user_id
+                and event.chat and event.chat.id == origin_chat_id
+                and event.text and not event.text.startswith('/')
+            )
 
         async def limit_handler(_, msg):
             user_input.append(msg.text.strip())
@@ -364,19 +374,27 @@ async def taskuser_callback(client, query):
         h = client.add_handler(MessageHandler(limit_handler, filters=create(limit_filter)), group=-1)
         try:
             await wait_for(event_done, timeout=30)
-            if user_input and user_input[0].isdigit():
-                new_val = safe_int(user_input[0])
-                if new_val <= 0:
-                    await send_message(query.message, "<blockquote>Cannot set 0 (unlimited)!</blockquote>")
-                elif admin_max > 0 and new_val > admin_max:
-                    await send_message(query.message, f"<blockquote>Cannot exceed admin limit of {admin_max}!</blockquote>")
+            if user_input:
+                raw_value = user_input[0].strip()
+                if not raw_value.isdigit():
+                    await send_message(query.message, "<blockquote>Invalid limit. Send a whole number greater than zero.</blockquote>")
                 else:
-                    update_user_ldata(target_user_id, "maxtask", new_val)
-                    await database.update_user_data(target_user_id)
-                    from bot.helper.ext_utils.task_manager import start_from_queued
-                    await start_from_queued()
+                    new_val = safe_int(raw_value)
+                    if new_val <= 0:
+                        await send_message(query.message, "<blockquote>Unlimited task limits are disabled for regular users.</blockquote>")
+                    elif admin_max > 0 and new_val > admin_max:
+                        await send_message(query.message, f"<blockquote>The maximum allowed limit is {admin_max}.</blockquote>")
+                    else:
+                        update_user_ldata(target_user_id, "maxtask", new_val)
+                        await database.update_user_data(target_user_id)
+                        from bot.helper.ext_utils.task_manager import start_from_queued
+                        await start_from_queued()
+                        await send_message(query.message, f"<blockquote>✅ Your task limit is now <b>{new_val}</b>.</blockquote>")
+        except TimeoutError:
+            await send_message(query.message, "<blockquote>⌛ Custom limit timed out. Reopen /taskuser to try again.</blockquote>")
         except Exception:
-            pass
+            LOGGER.exception("/taskuser custom limit update failed for user %s", target_user_id)
+            await send_message(query.message, "<blockquote>Could not update your task limit. Please try again.</blockquote>")
         finally:
             client.remove_handler(*h)
             text, buttons = build_taskuser_view(target_user_id, query.from_user)

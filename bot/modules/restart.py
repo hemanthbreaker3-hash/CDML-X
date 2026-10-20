@@ -33,16 +33,34 @@ from ..helper.telegram_helper.message_utils import (
 
 @new_task
 async def restart_bot(_, message):
-    args = message.text.split()
-    mode = "soft" if "-s" in args else "hard"
+    """Show an explicit, safe confirmation before a soft or full restart.
+
+    /restart performs a supervised process restart; /restart -s reloads code
+    without intentionally replacing the running process.
+    """
+    args = (message.text or "").split()[1:]
+    unknown = [arg for arg in args if arg not in ("-s", "--soft")]
+    if unknown:
+        await send_message(
+            message,
+            "<b>Restart options</b>\n\n<code>/restart</code> — restart the bot process\n<code>/restart -s</code> — soft reload modules\n\nUnknown option: <code>{}</code>".format(unknown[0].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")),
+        )
+        return
+    mode = "soft" if any(arg in ("-s", "--soft") for arg in args) else "hard"
     buttons = button_build.ButtonMaker()
-    buttons.data_button("Yes, Restart", f"botrestart confirm {mode}", style=ButtonStyle.SUCCESS)
-    buttons.data_button("No, Cancel", "botrestart cancel", style=ButtonStyle.DANGER)
-    button = buttons.build_menu(2)
-    msg = "<b>🔄 Confirm Bot Restart</b>\n\n<blockquote>Are you sure you want to reboot the bot process?</blockquote>"
-    if mode == "soft":
-        msg += "\n<blockquote><b>Mode: Soft Reload</b> (Reloads Python code while active tasks continue)</blockquote>"
-    await send_message(message, msg, button)
+    buttons.data_button("✅ Confirm", f"botrestart confirm {mode}", style=ButtonStyle.SUCCESS)
+    buttons.data_button("✖ Cancel", "botrestart cancel", style=ButtonStyle.DANGER)
+    title = "Soft reload" if mode == "soft" else "Full process restart"
+    detail = (
+        "Python modules will be reloaded. Active downloads may continue, but newly changed code can affect in-flight tasks."
+        if mode == "soft" else
+        "The bot process will be replaced. Your process supervisor should start it again if replacement fails."
+    )
+    await send_message(
+        message,
+        f"<b>🔄 {title}</b>\n\n<blockquote>{detail}</blockquote>\nChoose an action below to continue.",
+        buttons.build_menu(2),
+    )
 
 
 @new_task
@@ -232,10 +250,18 @@ async def _resume_tasks(notifier_dict):
 
 @new_task
 async def confirm_restart(_, query):
+    data = (query.data or "").split()
+    if len(data) < 2:
+        return await query.answer("Invalid restart action.", show_alert=True)
     await query.answer()
-    data = query.data.split()
     message = query.message
     reply_to = message.reply_to_message
+    if data[1] != "confirm":
+        await delete_message(message)
+        return
+    if len(data) < 3 or data[2] not in ("soft", "hard"):
+        await delete_message(message)
+        return await send_message(reply_to or message, "<blockquote>Invalid restart mode. Run /restart again.</blockquote>")
     await delete_message(message)
     if data[1] == "confirm":
         intervals["stopAll"] = True
