@@ -1,5 +1,6 @@
 from asyncio import gather, iscoroutinefunction
 from html import escape
+from hashlib import sha256
 from pyrogram.enums import ButtonStyle
 from re import findall
 from time import time
@@ -221,10 +222,37 @@ def _progress_percent(percent) -> float:
     return max(0.0, min(100.0, value))
 
 
-def progress_bar(percent: float) -> str:
-    """Render exactly ten Unicode blocks in the requested Telegram style."""
+PROGRESS_BAR_STYLES = ("bracket", "blocks", "wave")
+
+
+def _task_bar_style(task_key=None) -> str:
+    """Choose one stable-looking bar style per task; global bars use blocks."""
+    if task_key is None:
+        return "blocks"
+    digest = sha256(str(task_key).encode("utf-8", "replace")).digest()
+    return PROGRESS_BAR_STYLES[digest[0] % len(PROGRESS_BAR_STYLES)]
+
+
+def progress_bar(percent: float, task_key=None) -> str:
+    """Render a percentage-aware bar in one of the three requested styles.
+
+    Passing a task key keeps that task's style consistent across status refreshes,
+    while different tasks naturally receive different styles.
+    """
     value = _progress_percent(percent)
     filled = min(BAR_LENGTH, int(value // (100 / BAR_LENGTH)))
+    style = _task_bar_style(task_key)
+
+    if style == "bracket":
+        return f"⟦{'■' * filled}{'□' * (BAR_LENGTH - filled)}⟧"
+    if style == "wave":
+        # A moving three-symbol marker gives the long dash style a distinctive look.
+        width = 13
+        marker = "▰▱▰"
+        start = min(width - len(marker), int(round(value / 100 * (width - len(marker)))) )
+        chars = ["▬"] * width
+        chars[start : start + len(marker)] = marker
+        return "".join(chars)
     return ("▰" * filled) + ("▱" * (BAR_LENGTH - filled))
 
 
@@ -252,6 +280,22 @@ def bar_wave(pct, width=BAR_LENGTH):
 def get_progress_bar_string(pct):
     # Called directly by older consumers; retain it as a public compatibility API.
     return progress_bar(pct)
+
+
+def _task_progress_key(task):
+    """Return a stable identifier for selecting a task's visual bar style."""
+    try:
+        gid = task.gid()
+        if gid:
+            return str(gid)
+    except Exception:
+        pass
+    try:
+        listener = task.listener
+        message = listener.message
+        return f"{message.chat.id}:{message.id}:{listener.user_id}"
+    except Exception:
+        return f"{type(task).__name__}:{id(task)}"
 
 
 async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=1):
@@ -323,7 +367,7 @@ async def get_readable_message(sid, is_user, page_no=1, status="All", page_step=
             progress_label = f"{progress_value:.1f}%"
             # Render the requested glyphs directly in the live /status path.
             task_details += (
-                f"📊 <b>Progress:</b> <code>{progress_bar(progress_value)}</code> "
+                f"📊 <b>Progress:</b> <code>{progress_bar(progress_value, task_key=_task_progress_key(task))}</code> "
                 f"<b>{progress_label}</b>\n"
             )
             if task.listener.subname:
