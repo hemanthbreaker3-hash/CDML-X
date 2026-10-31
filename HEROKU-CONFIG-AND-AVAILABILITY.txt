@@ -1,0 +1,28 @@
+HEROKU CONFIGURATION AND AVAILABILITY
+=====================================
+
+CONFIGURATION
+- Heroku Config Vars are the source of truth for a Heroku dyno.
+- When DYNO or HEROKU_APP_NAME is present, Config.load_config() skips importing
+  local config.py entirely; old config.py values therefore cannot override or
+  fill in Heroku settings. Config.load_env() applies the Config Vars.
+- config.py, config.env, .env files, tokens, cookies, and session files are
+  excluded from the Docker build context. Do not commit secrets.
+- Required Config Vars: BOT_TOKEN, OWNER_ID, TELEGRAM_API, TELEGRAM_HASH.
+  DATABASE_URL is strongly recommended for persistence.
+
+RUNNING WITHOUT INACTIVITY SLEEP
+- deploy-heroku.sh selects the paid Basic tier for the `worker` process and
+  scales it to exactly one instance. Basic worker dynos do not auto-sleep due
+  to inactivity like Eco dynos can. This incurs Heroku charges (published base
+  price is currently US$7/month; verify current pricing in your account).
+- It scales down an old `web` process if one is present because this is a
+  worker-only Telegram bot. Do not deploy a web process just as a keep-alive.
+- No code can prevent billing/account enforcement, platform maintenance, dyno
+  crashes, memory/resource limits, or Heroku's routine daily dyno cycling.
+  The bot must tolerate restart and use a database/remote storage for state.
+
+DEPLOY
+  bash deploy-heroku.sh YOUR_APP_NAME
+  heroku logs --tail -a YOUR_APP_NAME
+  heroku ps -a YOUR_APP_NAME

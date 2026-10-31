@@ -1,0 +1,24 @@
+CDML-X isolated Docker deployment
+=================================
+
+This archive includes config.py as requested. It contains live credentials,
+so keep the ZIP private and rotate the Telegram bot token and database
+password if this archive has been shared or exposed.
+
+Deploy on a VPS:
+  cd /path/to/CDML-X-main
+  chmod +x deploy-docker.sh
+  ./deploy-docker.sh cdmlx-bot1
+
+Deploy another instance from a separate extracted project directory with its
+own config.py:
+  ./deploy-docker.sh cdmlx-bot2
+
+Useful commands:
+  docker logs -f cdmlx-bot1
+  docker restart cdmlx-bot1
+  docker stop cdmlx-bot1
+
+The script builds a per-container image and mounts config.py read-only at
+/usr/src/app/config.py. The config file is not baked into the Docker image.
+Only the named container is replaced; other containers are left untouched.

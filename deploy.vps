@@ -1,0 +1,431 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+SERVICE_NAME="cantarellabots_bot"
+POT_SERVICE_NAME="bgutil-ytdlp-pot-provider"
+APP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+export DEBIAN_FRONTEND=noninteractive
+
+# Optional secure handoff file used when a non-root account needs sudo. This
+# avoids `sudo -E`, which many VPS sudo policies explicitly disable.
+ENV_HANDOFF=""
+if [[ "${EUID}" -ne 0 ]]; then
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "ERROR: Root privileges are required for apt/systemd setup. This account has no sudo; ask the VPS administrator to run this script as root." >&2
+    exit 1
+  fi
+  # A caller may pass variables as shell exports. Transfer only the documented
+  # deployment variables via a private temporary file instead of preserving the
+  # entire environment. This does not bypass sudo policy or grant permissions.
+  ENV_HANDOFF="$(mktemp "${TMPDIR:-/tmp}/cdmlx-deploy-env.XXXXXX")" || exit 1
+  chmod 600 "$ENV_HANDOFF"
+  for key in BOT_TOKEN OWNER_ID TELEGRAM_API TELEGRAM_HASH DATABASE_URL CMD_SUFFIX cmd_suffix \
+             START_REPO_URL START_REPO_BUTTON START_UPDATE_URL START_UPDATE_BUTTON \
+             START_DEV_URL START_DEV_BUTTON; do
+    if [[ -v "$key" ]]; then printf '%s=%q\n' "$key" "${!key}" >> "$ENV_HANDOFF"; fi
+  done
+  if ! sudo -v; then
+    rm -f "$ENV_HANDOFF"
+    echo "WARNING: sudo is not permitted for this account. Switching to user-local deployment."
+    echo "NOTE: This mode cannot install OS packages or register systemd services; ask your VPS administrator to install missing system tools if needed."
+    exec bash "$APP_DIR/deploy-user.vps" "$@"
+  fi
+  echo "Non-root login detected; requesting authorized sudo for system packages and systemd setup..."
+  set +e
+  sudo bash "$APP_DIR/deploy.vps" --env-handoff "$ENV_HANDOFF" "$@"
+  rc=$?
+  rm -f "$ENV_HANDOFF"
+  exit "$rc"
+fi
+# Import the restricted handoff created by the non-root launcher. This is a
+# shell-escaped file created with printf %q and mode 0600; consume it immediately.
+if [[ "${1:-}" == "--env-handoff" ]]; then
+  ENV_HANDOFF="${2:-}"
+  [[ -n "$ENV_HANDOFF" && -f "$ENV_HANDOFF" ]] || { echo "ERROR: deployment environment handoff is missing" >&2; exit 1; }
+  # shellcheck disable=SC1090
+  source "$ENV_HANDOFF"
+  rm -f "$ENV_HANDOFF"
+  shift 2
+fi
+cd "$APP_DIR"
+fail() { echo "ERROR: $*" >&2; exit 1; }
+
+# Export credentials/settings assigned near the top of this script even if
+# they were written as shell assignments without the `export` keyword. Also
+# preserve values exported by the caller; do not print any secret values.
+for key in BOT_TOKEN OWNER_ID TELEGRAM_API TELEGRAM_HASH DATABASE_URL CMD_SUFFIX cmd_suffix \
+           START_REPO_URL START_REPO_BUTTON START_UPDATE_URL START_UPDATE_BUTTON \
+           START_DEV_URL START_DEV_BUTTON; do
+  if [[ -v "$key" ]]; then export "$key"; fi
+done
+
+# Normalize the lowercase spelling before config.py defaults are exported.
+# Uppercase CMD_SUFFIX wins when both forms are supplied; otherwise accept
+# cmd_suffix and persist the normalized value for systemd as CMD_SUFFIX.
+if [[ ! -v CMD_SUFFIX && -v cmd_suffix ]]; then
+  CMD_SUFFIX="$cmd_suffix"
+  export CMD_SUFFIX
+fi
+if [[ -v CMD_SUFFIX ]]; then
+  CMD_SUFFIX="${CMD_SUFFIX#${CMD_SUFFIX%%[![:space:]]*}}"
+  CMD_SUFFIX="${CMD_SUFFIX%${CMD_SUFFIX##*[![:space:]]}}"
+  export CMD_SUFFIX
+fi
+
+# Export every config.py variable into this deployment process. Explicitly
+# supplied environment variables take precedence over config.py. Complex values
+# are emitted using Python literal syntax, which ConfigManager understands.
+[[ -f config.py ]] || fail "config.py is missing from $APP_DIR"
+eval "$(python3 - <<'PY_EXPORT_CONFIG'
+import runpy, shlex
+namespace = runpy.run_path("config.py")
+for key, value in namespace.items():
+    if key.isupper() and not key.startswith("__"):
+        if isinstance(value, str):
+            rendered = value
+        elif value is None:
+            rendered = ""
+        elif isinstance(value, (dict, list, tuple)):
+            rendered = repr(value)
+        else:
+            rendered = str(value)
+        # Keep a caller-supplied export (including an intentionally empty one).
+        print(f'if [[ -z "${{{key}:-}}" ]]; then export {key}={shlex.quote(rendered)}; fi')
+PY_EXPORT_CONFIG
+)"
+
+: "${BOT_TOKEN:?ERROR: Set/export BOT_TOKEN or configure it in config.py}"
+if [[ "$BOT_TOKEN" != *:* || "$BOT_TOKEN" == *$'\n'* || "$BOT_TOKEN" == *$'\r'* ]]; then
+  fail "BOT_TOKEN environment variable is invalid"
+fi
+
+trap 'rc=$?; if [[ $rc -ne 0 ]]; then echo "Deployment failed (exit $rc). Logs: journalctl -u ${SERVICE_NAME} -n 100 --no-pager" >&2; fi' EXIT
+
+echo "=== CANTARELLABOTS VPS deployment (BOT_TOKEN environment mode) ==="
+# Fail early on syntax errors before expensive dependency installation.
+python3 - <<'PY_SYNTAX_PREFLIGHT'
+from pathlib import Path
+import py_compile
+files = sorted(Path(".").rglob("*.py"))
+for path in files:
+    if any(part in {"venv", ".venv", "__pycache__"} for part in path.parts):
+        continue
+    py_compile.compile(str(path), doraise=True)
+print(f"Python syntax preflight passed ({len(files)} source files discovered).")
+PY_SYNTAX_PREFLIGHT
+echo "App directory: $APP_DIR"
+if [[ -n "${CMD_SUFFIX:-${cmd_suffix:-}}" ]]; then
+  echo "Command suffix: configured"
+else
+  echo "Command suffix: not set (commands remain unsuffixed)"
+fi
+[[ -f config.py ]] || fail "config.py is missing from $APP_DIR"
+[[ -f requirements.txt ]] || fail "requirements.txt is missing from $APP_DIR"
+[[ -f start.sh ]] || fail "start.sh is missing from $APP_DIR"
+
+echo "[1/6] Installing system dependencies..."
+apt-get update
+apt-get install -y python3 python3-pip python3-venv python3-dev build-essential iproute2 \
+  libmagic1 libmagic-dev libffi-dev libssl-dev ffmpeg p7zip-full par2 aria2 rclone \
+  qbittorrent-nox git curl wget lsof procps cpulimit sabnzbdplus autoconf \
+  automake libtool swig libcurl4-openssl-dev libcrypto++-dev zlib1g-dev \
+  libsqlite3-dev libc-ares-dev libfreeimage-dev mediainfo
+if apt-cache show p7zip-rar >/dev/null 2>&1; then apt-get install -y p7zip-rar || true; fi
+
+# Install Deno system-wide as yt-dlp's JavaScript runtime only.
+# The bot itself continues to run under Python.
+export PATH="/usr/local/bin:/usr/local/sbin:$PATH"
+if ! command -v deno >/dev/null 2>&1; then
+  echo "[1b/6] Installing Deno JavaScript runtime..."
+  export DENO_INSTALL="/usr/local"
+  curl -fsSL https://deno.land/install.sh | sh -s -- -y
+fi
+command -v deno >/dev/null 2>&1 || fail "Deno installation failed"
+deno --version
+
+echo "[2/6] Creating virtual environment and installing requirements..."
+if [[ ! -x venv/bin/python ]]; then python3 -m venv venv; fi
+venv/bin/python -m pip install --upgrade pip setuptools wheel
+venv/bin/python -m pip install -r requirements.txt
+# Keep the Telegram framework on the verified current WzGram release instead
+# of reusing a stale package from an existing VPS virtualenv.
+venv/bin/python -m pip install --upgrade "wzgram[fast]"
+venv/bin/python - <<'PY_WZGRAM'
+from importlib.metadata import version
+installed = version("wzgram")
+print(f"WzGram version: {installed}")
+print("WzGram upgraded to the newest release available from the configured package index.")
+PY_WZGRAM
+# Explicitly install bundled plugin dependencies as well; older deployments may
+# have a venv created before the IMDb/MediaInfo plugins were added.
+venv/bin/python -m pip install --upgrade imdbinfo pycountry aiofiles pyyaml
+command -v mediainfo >/dev/null 2>&1 || fail "MediaInfo executable is missing after package installation"
+# Upgrade an existing venv too; pip install -r alone may leave an older yt-dlp
+# version in place, which can fail current YouTube authentication/challenge flows.
+venv/bin/python -m pip install --upgrade --pre 'yt-dlp[default,curl-cffi]' 'yt-dlp-ejs'
+venv/bin/python - <<'PY_YTDLP'
+import yt_dlp
+print(f"yt-dlp version: {yt_dlp.version.__version__}")
+PY_YTDLP
+# Install the official-recommended community PO-token provider plugin and its
+# matching Deno script provider. This helps when YouTube rejects the default
+# player clients; it does not replace valid account cookies.
+echo "[2b/6] Installing YouTube PO-token provider..."
+venv/bin/python -m pip install --upgrade 'bgutil-ytdlp-pot-provider==2.0.2'
+POT_DIR="/root/bgutil-ytdlp-pot-provider"
+if [[ ! -d "$POT_DIR/.git" ]]; then
+  rm -rf "$POT_DIR"
+  git clone --depth 1 --branch 2.0.2 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git "$POT_DIR"
+else
+  git -C "$POT_DIR" fetch --depth 1 origin tag 2.0.2
+  git -C "$POT_DIR" checkout --detach FETCH_HEAD
+fi
+(cd "$POT_DIR/server" && deno install --allow-scripts=npm:canvas --frozen)
+venv/bin/python -m pip show bgutil-ytdlp-pot-provider >/dev/null || fail "PO-token provider plugin installation failed"
+DENO_BIN="$(command -v deno)"
+POT_NODE_MODULES="$POT_DIR/server/node_modules"
+[[ -d "$POT_NODE_MODULES" ]] || fail "PO-token provider node_modules directory is missing after deno install"
+
+# The plugin alone is not enough: run the local HTTP token generator under
+# systemd. It binds to loopback only and is not exposed publicly.
+echo "[2c/6] Configuring supervised PO-token HTTP provider..."
+cat > "/etc/systemd/system/${POT_SERVICE_NAME}.service" <<EOF_POT
+[Unit]
+Description=BGUtil yt-dlp YouTube PO-token provider
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$POT_NODE_MODULES
+ExecStart=$DENO_BIN run --allow-env --allow-net --allow-ffi=. --allow-read=. ../src/main.ts
+Restart=on-failure
+RestartSec=3
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+[Install]
+WantedBy=multi-user.target
+EOF_POT
+systemd-analyze verify "/etc/systemd/system/${POT_SERVICE_NAME}.service"
+systemctl daemon-reload
+systemctl enable "${POT_SERVICE_NAME}.service"
+systemctl restart "${POT_SERVICE_NAME}.service"
+POT_READY=0
+for _ in $(seq 1 30); do
+  if ss -ltnH 'sport = :4416' 2>/dev/null | grep -q .; then
+    POT_READY=1
+    break
+  fi
+  sleep 1
+done
+[[ "$POT_READY" -eq 1 ]] || {
+  systemctl status "${POT_SERVICE_NAME}.service" --no-pager -l || true
+  journalctl -u "${POT_SERVICE_NAME}.service" -n 80 --no-pager || true
+  fail "PO-token HTTP provider did not listen on localhost:4416"
+}
+echo "PO-token HTTP provider is listening on localhost:4416"
+CANTARELLABOTS_MEGA_SDK_VERSION="10.20.20" venv/bin/python -m pip install --no-deps 'mega.py>=1.0.8'
+chmod +x start.sh deploy.vps one-click-deploy.sh 2>/dev/null || true
+
+# Validate config.py directly; never source Python config as shell or require .env.
+echo "[3/6] Validating config.py and required settings..."
+venv/bin/python -m py_compile config.py
+BOT_TOKEN="$BOT_TOKEN" venv/bin/python - <<'PYCFG'
+import config
+import os
+
+def resolved_setting(key):
+    # Deployment credentials may be provided via shell exports or configured
+    # in config.py. Prefer the resolved environment because it is also written
+    # into the systemd EnvironmentFile below.
+    env_value = os.environ.get(key)
+    if env_value is not None and env_value.strip() != '':
+        return env_value.strip()
+    return getattr(config, key, None)
+
+required = ('OWNER_ID', 'TELEGRAM_API', 'TELEGRAM_HASH')
+settings = {key: resolved_setting(key) for key in required}
+for key, value in settings.items():
+    if value is None or value == '' or value == 0 or value == '0':
+        raise SystemExit(f'Invalid or missing deployment setting: {key} (set it in deploy.vps, the environment, or config.py)')
+token = os.environ.get('BOT_TOKEN', '').strip() or str(getattr(config, 'BOT_TOKEN', '')).strip()
+if token.count(':') != 1:
+    raise SystemExit('BOT_TOKEN is missing or does not look valid')
+try:
+    int(settings['OWNER_ID'])
+    int(settings['TELEGRAM_API'])
+except (TypeError, ValueError):
+    raise SystemExit('OWNER_ID and TELEGRAM_API must be numeric in the environment or config.py')
+print('Configuration syntax and required settings: OK; credentials validated (values hidden)')
+PYCFG
+mkdir -p downloads thumbnails tokens rclone cookies Images configs/sabnzbd
+
+# Preflight the bundled IMDb/MediaInfo plugin manifests and handler names before
+# writing/restarting the service. This catches broken ZIPs during deployment.
+venv/bin/python - <<'PY_PLUGIN_PREFLIGHT'
+from pathlib import Path
+import yaml
+checks = {
+    "imdb": {"imdb_search", "imdb_callback"},
+    "mediainfo": {"mediainfo"},
+}
+for plugin, handlers in checks.items():
+    folder = Path("plugins") / plugin
+    manifest_path = next((folder / n for n in ("wzml_plugin.yml", "wzml_plugin.yaml", "plugin.yml", "plugin.yaml") if (folder / n).is_file()), None)
+    if manifest_path is None:
+        raise SystemExit(f"Deployment error: {plugin} plugin manifest is missing")
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+    entry = folder / manifest.get("entry", f"{plugin}.py")
+    if not entry.is_file():
+        raise SystemExit(f"Deployment error: {plugin} entry file is missing: {entry}")
+    source = entry.read_text(encoding="utf-8")
+    missing = sorted(name for name in handlers if f"def {name}(" not in source and f"async def {name}(" not in source)
+    if missing:
+        raise SystemExit(f"Deployment error: {plugin} handler(s) missing: {', '.join(missing)}")
+    for command in manifest.get("commands", []):
+        if command.get("access") not in ("authorized_uset", "authorized", "sudo", "owner"):
+            raise SystemExit(f"Deployment error: invalid access filter in {plugin} manifest")
+# Also verify the plugin manager startup policy contains the recovery path for
+# stale MongoDB enabled/autoload flags; syntax checks alone cannot catch this.
+manager = Path("bot/core/plugin_manager.py").read_text(encoding="utf-8")
+if 'name in {"imdb", "mediainfo"}' not in manager or 'forced enabled/autoload on startup' not in manager:
+    raise SystemExit("Deployment error: IMDb/MediaInfo stale plugin-state recovery is missing")
+if 'PLUGIN_HANDLER_GROUP = 100' not in manager or manager.count('PLUGIN_HANDLER_GROUP,') < 2:
+    raise SystemExit("Deployment error: plugin handlers do not use the dedicated dispatcher group")
+if 'manifest declares handlers, but none could be registered' not in manager:
+    raise SystemExit("Deployment error: empty plugin handler registration is not guarded")
+print("IMDb/MediaInfo plugin deployment preflight: OK (stale state recovery + dispatcher routing fix present)")
+PY_PLUGIN_PREFLIGHT
+
+# Ensure the current 12-cell progress renderer is really present in the exact
+# source tree being deployed (protects against extracting an old/incorrect ZIP).
+venv/bin/python - <<'PY_PROGRESS_PREFLIGHT'
+import ast
+import re
+from html import escape
+from pathlib import Path
+source_path = Path("bot/helper/ext_utils/status_utils.py")
+source = source_path.read_text(encoding="utf-8")
+# The active renderer must call the new progress_bar helper with its computed progress.
+if not re.search(r'progress_bar\s*\(\s*progress\s*(?:,|\))', source):
+    raise SystemExit("Deployment error: active /status renderer is not calling the new progress bar")
+tree = ast.parse(source, filename=str(source_path))
+names = {"_progress_percent", "progress_bar", "get_progress_bar_string"}
+nodes = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
+assignments = [
+    ast.Assign(targets=[ast.Name(id="BAR_LENGTH", ctx=ast.Store())], value=ast.Constant(value=12)),
+]
+namespace = {"escape": escape}
+module = ast.Module(body=[*assignments, *nodes], type_ignores=[])
+ast.fix_missing_locations(module)
+exec(compile(module, str(source_path), "exec"), namespace)
+expected = "▰▰▰▰▰▰▰▱▱▱▱▱"
+if namespace["progress_bar"]("60%") != expected or len(namespace["progress_bar"]("60%")) != 12:
+    raise SystemExit("Deployment error: 12-cell progress renderer smoke test failed")
+print(f"Progress UI preflight: OK ({expected})")
+PY_PROGRESS_PREFLIGHT
+
+# Persist every config.py variable for systemd. The app's ConfigManager converts
+# environment strings back to the expected bool/int/list/dict types. Caller
+# exports override config.py values. Keep secrets in a root-only environment file.
+install -m 600 /dev/null /etc/cantarellabots_bot.env
+python3 - <<'PY_WRITE_ENV'
+import os, runpy
+from pathlib import Path
+namespace = runpy.run_path("config.py")
+keys = [k for k in namespace if k.isupper() and not k.startswith("__")]
+# These are supported runtime settings but are not Config.py attributes.
+# Preserve them in the systemd EnvironmentFile when supplied during deployment.
+extra_keys = (
+    "START_REPO_URL", "START_REPO_BUTTON",
+    "START_UPDATE_URL", "START_UPDATE_BUTTON",
+    "START_DEV_URL", "START_DEV_BUTTON",
+)
+keys = list(dict.fromkeys(keys + [key for key in extra_keys if key in os.environ]))
+# Include only config variables and the explicit start-menu overrides; prefer
+# the resolved process environment over config.py defaults.
+def env_value(key, default):
+    if key in os.environ:
+        return os.environ[key]
+    if default is None:
+        return ""
+    if isinstance(default, (dict, list, tuple)):
+        return repr(default)
+    return str(default)
+def systemd_quote(value):
+    value = str(value)
+    value = value.replace("\\", "\\\\").replace('"', chr(92) + '"')
+    value = value.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    return '"' + value + '"'
+lines = [f"{key}={systemd_quote(env_value(key, namespace.get(key, "")))}" for key in keys]
+# BOT_TOKEN is guaranteed above; include it explicitly if config.py omitted it.
+if "BOT_TOKEN" not in keys:
+    lines.append(f"BOT_TOKEN={systemd_quote(os.environ['BOT_TOKEN'])}")
+Path("/etc/cantarellabots_bot.env").write_text("\n".join(lines) + "\n", encoding="utf-8")
+os.chmod("/etc/cantarellabots_bot.env", 0o600)
+print(f"Persisted {len(lines)} configuration environment variables (values hidden).")
+PY_WRITE_ENV
+chmod 600 /etc/cantarellabots_bot.env
+
+# Start bot directly. Do not run update.py automatically: it can reset files to UPSTREAM_REPO.
+echo "[4/6] Writing systemd service..."
+cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
+[Unit]
+Description=CANTARELLABOTS Mirror Leech Bot Service
+Wants=network-online.target
+Requires=${POT_SERVICE_NAME}.service
+After=network-online.target ${POT_SERVICE_NAME}.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$APP_DIR
+ExecStart=$APP_DIR/start.sh
+Restart=on-failure
+RestartSec=8
+EnvironmentFile=/etc/cantarellabots_bot.env
+Environment="PATH=$APP_DIR/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemd-analyze verify "/etc/systemd/system/${SERVICE_NAME}.service"
+
+echo "[5/6] Enabling systemd service..."
+systemctl daemon-reload
+systemctl enable "${SERVICE_NAME}.service"
+
+echo "[6/6] Starting service and checking status..."
+systemctl reset-failed "${SERVICE_NAME}.service" || true
+systemctl restart "${SERVICE_NAME}.service"
+sleep 8
+if ! systemctl is-active --quiet "${SERVICE_NAME}.service"; then
+  systemctl status "${SERVICE_NAME}.service" --no-pager -l || true
+  journalctl -u "${SERVICE_NAME}.service" -n 140 --no-pager || true
+  fail "Bot service did not stay active. Review the error above."
+fi
+# Wait for plugin boot to finish, then surface IMDb/MediaInfo load failures
+# directly in the deploy output rather than reporting success only because
+# systemd kept the Python process alive.
+for _ in $(seq 1 30); do
+  if journalctl -u "${SERVICE_NAME}.service" --since "2 minutes ago" --no-pager 2>/dev/null | grep -q "Required plugin mediainfo:"; then
+    break
+  fi
+  sleep 1
+done
+BOOT_LOGS="$(journalctl -u "${SERVICE_NAME}.service" --since "3 minutes ago" --no-pager 2>/dev/null || true)"
+if ! grep -q "Required plugin imdb: registered" <<<"$BOOT_LOGS" || ! grep -q "Required plugin mediainfo: registered" <<<"$BOOT_LOGS"; then
+  echo "WARNING: Bot process is active, but IMDb/MediaInfo handler registration was not confirmed." >&2
+  echo "Relevant startup diagnostics:" >&2
+  grep -iE 'plugin (imdb|mediainfo)|plugins loaded|traceback|exception|error' <<<"$BOOT_LOGS" | tail -100 >&2 || true
+  echo "Deployment cannot confirm these commands are ready. Check logs before assuming success." >&2
+else
+  echo "Verified: IMDb and MediaInfo plugin command handlers registered during startup."
+fi
+trap - EXIT
+echo "=== Deployment complete: service is active ==="
+echo "Status: systemctl status ${SERVICE_NAME} --no-pager -l"
+echo "Logs:   journalctl -u ${SERVICE_NAME} -f"

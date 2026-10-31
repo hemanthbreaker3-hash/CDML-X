@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+APP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$APP_DIR"
+fail(){ echo "ERROR: $*" >&2; exit 1; }
+[[ -f config.py ]] || fail "config.py is missing from $APP_DIR"
+[[ -f requirements.txt ]] || fail "requirements.txt is missing from $APP_DIR"
+PYTHON="$(command -v python3 || true)"
+[[ -n "$PYTHON" ]] || fail "python3 is unavailable. Ask the VPS administrator to provide Python 3 and venv support."
+# Resolve config.py values without executing it as shell. Existing caller exports win.
+while IFS=$'\t' read -r key value; do
+  [[ -n "$key" ]] || continue
+  if [[ ! -v "$key" ]]; then printf -v "$key" '%s' "$value"; export "$key"; fi
+done < <("$PYTHON" - <<'PYCFG'
+import runpy, os, shlex
+try: ns=runpy.run_path('config.py')
+except Exception as e: raise SystemExit(f'Cannot load config.py: {e}')
+for k,v in ns.items():
+ if k.isupper() and not k.startswith('__') and v is not None:
+  if isinstance(v,(dict,list,tuple)): v=repr(v)
+  print(k+'\t'+str(v).replace('\\','\\\\').replace('\t','\\t').replace('\n','\\n'))
+PYCFG
+)
+: "${BOT_TOKEN:?ERROR: Set/export BOT_TOKEN or configure it in config.py}"
+if [[ "$BOT_TOKEN" != *:* ]]; then fail "BOT_TOKEN does not look valid"; fi
+if [[ ! -x venv/bin/python ]]; then "$PYTHON" -m venv venv || fail "Could not create venv. Python venv/ensurepip may need administrator installation."; fi
+venv/bin/python -m pip install --upgrade pip setuptools wheel
+venv/bin/python -m pip install -r requirements.txt
+venv/bin/python -m pip install --upgrade 'wzgram[fast]' imdbinfo pycountry aiofiles pyyaml
+venv/bin/python -m pip install --upgrade --pre 'yt-dlp[default,curl-cffi]' yt-dlp-ejs
+venv/bin/python -m pip install --upgrade 'bgutil-ytdlp-pot-provider==2.0.2' || echo 'WARNING: optional PO-token plugin could not be installed.' >&2
+venv/bin/python -m py_compile config.py
+mkdir -p downloads thumbnails tokens rclone cookies Images configs/sabnzbd
+# Persist values in a private shell-compatible environment file for restart commands.
+venv/bin/python - <<'PYENV'
+import os, runpy, shlex
+from pathlib import Path
+ns=runpy.run_path('config.py')
+keys={k for k in ns if k.isupper() and not k.startswith('__')}
+keys.update(('BOT_TOKEN','OWNER_ID','TELEGRAM_API','TELEGRAM_HASH','DATABASE_URL','CMD_SUFFIX','START_REPO_URL','START_REPO_BUTTON','START_UPDATE_URL','START_UPDATE_BUTTON','START_DEV_URL','START_DEV_BUTTON'))
+lines=[]
+for k in sorted(keys):
+ v=os.environ.get(k)
+ if v is None:
+  v=ns.get(k)
+ if v is None: continue
+ if isinstance(v,(dict,list,tuple)): v=repr(v)
+ lines.append(f'export {k}={shlex.quote(str(v))}')
+p=Path('.cdmlx-user.env'); p.write_text('\n'.join(lines)+'\n',encoding='utf-8'); p.chmod(0o600)
+PYENV
+# Check core external programs; don't pretend user mode can apt-install them.
+missing=()
+for cmd in ffmpeg aria2c 7z rclone mediainfo; do command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd"); done
+if ((${#missing[@]})); then
+  echo "WARNING: system tools not found: ${missing[*]}"
+  echo "The VPS administrator may need to install these tools; this script cannot use apt without root."
+fi
+cat > run-user.sh <<'RUN'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+APP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$APP_DIR"
+[[ -f .cdmlx-user.env ]] || { echo 'Run ./one-click-deploy.sh first.' >&2; exit 1; }
+# shellcheck disable=SC1091
+source ./.cdmlx-user.env
+export PYTHONUNBUFFERED=1
+exec "$APP_DIR/venv/bin/python" -u -m bot "$@"
+RUN
+chmod 700 run-user.sh
+# Restart any previous user-mode instance owned by this account, then start one.
+mkdir -p logs
+if [[ -f .cdmlx-user.pid ]] && kill -0 "$(cat .cdmlx-user.pid)" 2>/dev/null; then
+  kill "$(cat .cdmlx-user.pid)" || true
+  sleep 2
+fi
+nohup ./run-user.sh >> logs/user-bot.log 2>&1 </dev/null &
+echo $! > .cdmlx-user.pid
+sleep 5
+if kill -0 "$(cat .cdmlx-user.pid)" 2>/dev/null; then
+  echo 'User-local deployment launched.'
+  echo "PID: $(cat .cdmlx-user.pid)"
+  echo 'Logs: tail -f logs/user-bot.log'
+  echo 'Stop: kill "$(cat .cdmlx-user.pid)"'
+else
+  tail -n 100 logs/user-bot.log || true
+  fail 'Bot process exited during startup; inspect logs/user-bot.log.'
+fi
+echo 'This mode is not managed by systemd and may stop when the VPS/container restarts or kills user processes.'

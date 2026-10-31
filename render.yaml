@@ -1,0 +1,23 @@
+# Render runs the Telegram bot as a background worker. The website is deployed separately from /vercel.
+services:
+  - type: worker
+    name: cantarellabots-bot
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m bot
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.14
+      - key: BOT_TOKEN
+        sync: false
+      - key: OWNER_ID
+        sync: false
+      - key: TELEGRAM_API
+        sync: false
+      - key: TELEGRAM_HASH
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: BASE_URL
+        sync: false

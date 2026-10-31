@@ -1,0 +1,19 @@
+CDML-X maintenance patch (2026-10-18)
+
+Changes:
+- IMDb title/ID lookups now handle provider/network exceptions and return the normal
+  no-results response instead of crashing the command handler.
+- IMDb ID matching accepts an IMDb title URL as well as a bare tt... ID.
+- IMDb search-result extraction tolerates an absent/malformed `titles` field.
+- IMDb selection buttons are capped at 10 results to keep the inline keyboard usable.
+- Removed the unnecessary fixed one-second idle wait after sequential Telegram uploads,
+  reducing upload completion latency without introducing unsafe concurrent uploads.
+
+Validation:
+- Python compileall passed for the project.
+- Runtime integration tests require the project's configured Telegram credentials,
+  services, and dependencies and were not run here.
+
+Notes:
+- Uploads remain sequential because this uploader shares mutable reply/message sequence
+  state; naive concurrency could misassociate messages or corrupt media-group ordering.
