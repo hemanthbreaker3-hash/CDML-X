@@ -1,0 +1,12 @@
+CDML-X Video Tools / Audio Split fixes (2026-10-29)
+
+- Added Audio Split to the -vt selector and routed its callback through the normal selector flow.
+- Audio Split now creates one MKV per audio stream, retaining the original video stream in every output, then packages the files into a ZIP.
+- Audio Split no longer requires language presets, tagged tracks, or language suffix settings; untagged audio streams are processed too.
+- Simplified Video Processing Tools settings to show the automatic Audio Split toggle and explain its output behavior.
+- Matched Video Tools execution permission checks for SubSync and Audio Sync to the selector's owner/sudo restriction.
+- Added a 📁 View Files URL button to the group task-completion message, linking to the bot's private chat when the bot username is available.
+- Kept the corrected single 12-cell progress bar implementation to avoid the missing _task_bar_style NameError.
+
+Validation: Python compileall, AST parsing of changed modules, static feature assertions, and ZIP integrity checks passed.
+Live Telegram/VPS execution was not available during packaging.

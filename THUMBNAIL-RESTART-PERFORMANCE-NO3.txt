@@ -1,0 +1,35 @@
+CDML-X NO3 - THUMBNAIL / RESTART / PERFORMANCE PATCH
+
+Automatic thumbnail lookup
+- Keeps the existing no-key IMDb lookup as the first source.
+- Adds Jikan (MyAnimeList) and AniList public no-key anime catalogue fallbacks.
+- Adds TVmaze no-key show lookup for TV/web series and cartoon series.
+- TMDb remains optional and is only used when a TMDb token is configured.
+- Documents request portrait artwork; video/media requests landscape artwork where the source offers it.
+- Existing local video-frame fallback remains active if public artwork is unavailable.
+- API failures are caught and do not stop the upload task.
+
+Image quality
+- Lanczos downsampling and high-quality JPEG encoding are used.
+- Keeps 4:4:4 chroma and reduces JPEG quality in small steps only when needed.
+- Telegram thumbnail constraints still apply (320x320 maximum and approximately 200 KB).
+- This does not alter the original media file or claim to restore detail absent from source artwork.
+
+Restart reliability
+- Full restart now spawns a detached child launcher before exiting the current process.
+- Child waits for the old PID to exit, then starts the bot with the same Python interpreter,
+  working directory and environment. This supports tmux/shell deployments without requiring
+  systemd/supervisord to restart the process.
+- Existing .restartmsg startup notification flow is retained.
+
+Performance notes
+- No fixed upload speed can be guaranteed. VPS network capacity, Telegram DC routing,
+  account limits, helper clients, disk throughput and FloodWait responses determine speed.
+- Existing uploader and helper-client balancing are preserved; no unsafe artificial
+  concurrency increase is forced.
+
+Public API attribution / limits
+- TVmaze: https://www.tvmaze.com/api (CC BY-SA; link/credit TVmaze when displaying its data).
+- Jikan: https://docs.api.jikan.moe/ (unofficial read-only MyAnimeList data; rate limited).
+- AniList: https://docs.anilist.co/ (public catalogue data; rate limits may change).
+- These external services can be unavailable, rate limited, or change their response formats.

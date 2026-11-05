@@ -1,0 +1,17 @@
+CDML-X VPS sudo/environment fix
+================================
+
+The one-click installer no longer invokes `sudo -E`, which is commonly disabled
+by VPS sudo policy. A non-root account with authorized sudo runs the script as
+normal; only documented deployment variables are transferred via a private
+mode-0600 temporary handoff file. The file is removed by the installer.
+
+If sudo rejects the user (e.g. “I'm sorry ... I can't do that”), the account is
+not authorized by the server's sudo policy. This cannot be fixed in a ZIP: log
+in as root or ask the VPS provider/administrator to grant sudo permission.
+
+Recommended command (root or authorized non-root login):
+  chmod +x one-click-deploy.sh deploy.vps start.sh
+  ./one-click-deploy.sh
+
+Never use `sudo -E` for this installer.

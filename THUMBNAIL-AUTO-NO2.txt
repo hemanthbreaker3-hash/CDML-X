@@ -1,0 +1,9 @@
+CDML-X NO2 - Automatic thumbnails
+
+- Uses the existing IMDb-first, TMDb-fallback thumbnail lookup from bot/helper/ext_utils/tmdb_utils.py.
+- Uses portrait artwork for documents and landscape artwork for video/media uploads.
+- Keeps per-user THUMBNAIL_MODE / AUTO_THUMBNAIL settings in the existing user settings database flow; falls back to global AUTO_THUMBNAIL config.
+- If catalog artwork is unavailable, videos use a local frame fallback; document-mode video frames are cropped to portrait.
+- Enable via Leech/User Settings thumbnail mode = Auto (or global AUTO_THUMBNAIL = True).
+
+Runtime behavior still needs testing with valid Telegram credentials, database connectivity, and IMDb/TMDb network access.

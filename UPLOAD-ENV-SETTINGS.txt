@@ -1,0 +1,24 @@
+CDML-X / WZGRAM FAST UPLOAD SETTINGS
+
+Recommended memory-safe defaults for a 1 GiB dyno:
+
+WZGRAM_MAX_CONCURRENT=2
+WZGRAM_MEDIA_SESSIONS=3
+WZGRAM_UPLOAD_WORKERS=6
+BOT_THREAD_POOL_SIZE=8
+BOT_HARD_TASK_LIMIT=5
+BOT_USER_PARALLEL_TASKS=1
+
+Optional tuning:
+- Increase WZGRAM_UPLOAD_WORKERS gradually (maximum accepted: 12).
+- Increase WZGRAM_MEDIA_SESSIONS gradually (maximum accepted: 6).
+- Keep WZGRAM_MAX_CONCURRENT low on small-memory dynos; maximum accepted: 8.
+- Do not set task limits to 0; the hard task limit must remain positive.
+
+The application uses wzgram[fast] when installed. The fast MTProto part uploader
+uses 512 KiB parts and cancellation-aware progress reporting. The upload worker
+pool and media-session pool are bounded to avoid unbounded per-upload memory use.
+
+The main bot continues receiving updates. Helper/user session clients keep their
+existing no-updates behavior. Actual throughput depends on network, Telegram DC,
+account limits, storage I/O and FloodWaits; 200 Mbps is a target, not a guarantee.

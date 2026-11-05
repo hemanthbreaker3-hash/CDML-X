@@ -1,0 +1,33 @@
+{
+  "name": "VIDEO-TOOL Telegram Bot",
+  "description": "Container-based Telegram download and media processing bot.",
+  "stack": "container",
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "env": {
+    "BOT_TOKEN": {
+      "description": "Telegram bot token from BotFather. Keep this secret.",
+      "required": true
+    },
+    "OWNER_ID": {
+      "description": "Numeric Telegram user ID of the bot owner.",
+      "required": true
+    },
+    "TELEGRAM_API": {
+      "description": "Telegram API ID from my.telegram.org.",
+      "required": true
+    },
+    "TELEGRAM_HASH": {
+      "description": "Telegram API hash from my.telegram.org. Keep this secret.",
+      "required": true
+    },
+    "DATABASE_URL": {
+      "description": "Recommended: MongoDB connection string for persistent settings.",
+      "required": false
+    }
+  }
+}

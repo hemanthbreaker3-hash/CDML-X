@@ -1,0 +1,36 @@
+CDML-X deployment repair notes
+==============================
+
+This package is based on the latest session-storage repair archive.
+
+Included repairs:
+- Telegram SQLite sessions use the persistent writable .sessions directory
+  under the application directory by default (override with WZGRAM_SESSION_DIR).
+- Telegram transmission concurrency remains memory-safe by default (2; override
+  with WZGRAM_MAX_CONCURRENT).
+- Removed return statements from Google Drive download/upload finally blocks.
+  These returns could suppress exceptions or overwrite the result of the
+  alternate-auth retry. Completion callbacks now run only after successful work.
+- Google Drive upload cancellation cleanup is guarded and cleanup errors are logged.
+
+VPS deployment (run as root, or an account with authorized sudo):
+  cd /bot1/CDML-X
+  systemctl stop cantarellabots_bot 2>/dev/null || true
+  # Extract this ZIP into /bot1/CDML-X and overwrite existing project files.
+  chmod +x deploy.vps start.sh
+  ./deploy.vps
+
+Check deployment:
+  systemctl status cantarellabots_bot --no-pager -l
+  journalctl -u cantarellabots_bot -n 150 --no-pager
+  ls -lah /bot1/CDML-X/.sessions
+
+Important:
+- A ZIP cannot guarantee success on every VPS. Deployment still depends on valid
+  BOT_TOKEN, OWNER_ID, TELEGRAM_API, TELEGRAM_HASH, reachable MongoDB, package
+  repository/network access, and the server's systemd/OS configuration.
+- Python SyntaxWarning messages about `return` in `finally` in the two Google
+  Drive modules addressed by this repair should no longer appear.
+- A successful install is confirmed only when deploy.vps prints
+  "Deployment complete" and the systemd service remains active with the bot
+  startup logs showing both required plugins registered.
