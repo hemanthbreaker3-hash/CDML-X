@@ -7,7 +7,7 @@ from time import time
 from aioshutil import rmtree
 from natsort import natsorted
 from pyrogram import StopTransmission
-from pyrogram.enums import ChatType
+from pyrogram.enums import ChatType, ParseMode
 from pyrogram.errors import FloodWait, RPCError
 
 try:
@@ -189,17 +189,11 @@ class TelegramUploader:
             cap_file_ = name + lsuffix.replace(r"\s", " ") + ext
             lsuffix = re_sub(r"<.*?>", "", lsuffix).replace(r"\s", " ")
 
-        lfont = self._lfont or Config.LEECH_FONT
-        font_tag = (
-            "tg-spoiler"
-            if lfont in ("tg-spoiler", "spoiler")
-            else (lfont if (lfont and lfont != "none") else "")
-        )
-        cap_mono = (
-            f"<{font_tag}>{cap_file_}</{font_tag}>"
-            if font_tag
-            else cap_file_
-        )
+        # Build the caption first, then apply the selected font to the final
+        # caption. Previously only the bare filename was styled; a custom
+        # LEECH_CAPTION replaced that value and silently discarded the font.
+        lfont = self._lfont if self._lfont is not None else Config.LEECH_FONT
+        cap_mono = cap_file_
         if lcaption:
             lcaption = re_sub(
                 r"(\\\||\\\{|\\\}|\\s)",
@@ -277,6 +271,22 @@ class TelegramUploader:
                 cap_mono,
             )
 
+        # Telegram font styles are HTML entities. Apply after custom-caption
+        # formatting so both default filename captions and custom templates
+        # receive the selected style. Restrict tags to the settings UI values.
+        font_tags = {
+            "b": "b",
+            "i": "i",
+            "code": "code",
+            "tg-spoiler": "tg-spoiler",
+            "spoiler": "tg-spoiler",
+            "s": "s",
+            "u": "u",
+        }
+        selected_tag = font_tags.get(str(lfont or "none").strip().lower())
+        if cap_mono and selected_tag:
+            cap_mono = f"<{selected_tag}>{cap_mono}</{selected_tag}>"
+
         if len(file_) > 60:
             if is_archive(file_):
                 name = get_base_name(file_)
@@ -310,10 +320,16 @@ class TelegramUploader:
         for msg in self._media_dict[key][subkey]:
             caption = msg.caption.html if msg.caption else None
             if key == "videos":
-                input_media = InputMediaVideo(media=msg.video.file_id, caption=caption)
+                input_media = InputMediaVideo(
+                    media=msg.video.file_id,
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
+                )
             else:
                 input_media = InputMediaDocument(
-                    media=msg.document.file_id, caption=caption
+                    media=msg.document.file_id,
+                    caption=caption,
+                    parse_mode=ParseMode.HTML,
                 )
             rlist.append(input_media)
         return rlist
@@ -406,6 +422,7 @@ class TelegramUploader:
                     "msg_id": new_msg.id,
                     "link": new_msg.link,
                     "file_": self._upload_seq[seq_idx]["file_"],
+                    "user_session": self._upload_seq[seq_idx].get("user_session", False),
                 }
                 self._msg_to_seq[(new_msg.chat.id, new_msg.id)] = seq_idx
         self._sent_msg = msgs_list[-1]
@@ -447,6 +464,10 @@ class TelegramUploader:
 
             original_chat = entry["chat_id"]
             original_msg = entry["msg_id"]
+            # Track the uploader per message. A task may contain files on both
+            # sides of the session threshold, so the instance-wide flag is not
+            # reliable once concurrent upload tasks have completed.
+            entry_uses_user = bool(entry.get("user_session", self._user_session))
             copy_from_chat = original_chat
             copy_from_msg = original_msg
             ghost_copy = None
@@ -455,7 +476,7 @@ class TelegramUploader:
             # copied by the bot to other destinations until the bot has its own
             # copy. Make that copy first, but do not delete the original yet.
             is_group_chat = isinstance(original_chat, int) and original_chat < 0
-            if self._user_session and is_group_chat:
+            if entry_uses_user and is_group_chat:
                 try:
                     ghost_kwargs = {
                         "chat_id": original_chat,
@@ -489,6 +510,7 @@ class TelegramUploader:
                 original_chat != src_chat.id
                 and not self._listener.up_dest
                 and not ghost_copy
+                and not entry_uses_user
             ):
                 try:
                     staged = await _call_with_flood_retry(
@@ -617,24 +639,42 @@ class TelegramUploader:
                 and original_chat != self._listener.user_id
                 and is_dump_source
                 and (
-                    not self._user_session
+                    not entry_uses_user
                     or original_chat != copy_from_chat
                     or original_msg != copy_from_msg
                 )
             )
             if should_remove_original:
-                try:
-                    await TgClient.bot.delete_messages(
-                        chat_id=original_chat, message_ids=original_msg
-                    )
+                # The original belongs to the session account when that account
+                # performed this upload. Prefer deleting it with that account;
+                # use the bot as a fallback when it has delete permission.
+                deleted = False
+                delete_errors = []
+                if entry_uses_user and TgClient.user is not None:
+                    try:
+                        await TgClient.user.delete_messages(
+                            chat_id=original_chat, message_ids=original_msg
+                        )
+                        deleted = True
+                    except Exception as err:
+                        delete_errors.append(f"session: {err}")
+                if not deleted:
+                    try:
+                        await TgClient.bot.delete_messages(
+                            chat_id=original_chat, message_ids=original_msg
+                        )
+                        deleted = True
+                    except Exception as err:
+                        delete_errors.append(f"bot: {err}")
+                if deleted:
                     LOGGER.info(
                         f"Deleted original staging upload {original_chat}/{original_msg} "
-                        "after successful Bot PM and dump delivery"
+                        "after successful Bot PM and dump delivery; bot-authored copy retained"
                     )
-                except Exception as err:
+                else:
                     LOGGER.warning(
                         f"Could not delete original staging upload "
-                        f"{original_chat}/{original_msg}: {err}"
+                        f"{original_chat}/{original_msg}: {'; '.join(delete_errors)}"
                     )
 
     async def _upload_file_task(self, file_, f_path, dirpath, user_session, seq_idx):
@@ -820,6 +860,7 @@ class TelegramUploader:
                 "msg_id": sent_msg.id,
                 "link": sent_msg.link,
                 "file_": file_,
+                "user_session": bool(user_session),
             }
             self._msg_to_seq[(sent_msg.chat.id, sent_msg.id)] = seq_idx
 

@@ -2,6 +2,7 @@ from asyncio import sleep
 
 from PIL import Image
 from pyrogram import StopTransmission
+from pyrogram.enums import ParseMode
 from pyrogram.errors import FloodWait, PhotoInvalidDimensions
 from pyrogram.types import ReplyParameters
 
@@ -391,6 +392,7 @@ class HypertgUpload(HypertgTransfer):
                 "disable_notification": True,
                 "progress": self._progress,
                 "progress_args": (file_path,),
+                "parse_mode": ParseMode.HTML,
             }
             if cap_mono:
                 kwargs["caption"] = cap_mono
@@ -476,6 +478,7 @@ class HypertgUpload(HypertgTransfer):
             "disable_notification": True,
             "progress": self._progress,
             "progress_args": (file_path,),
+            "parse_mode": ParseMode.HTML,
         }
         if cap_mono:
             kwargs["caption"] = cap_mono
