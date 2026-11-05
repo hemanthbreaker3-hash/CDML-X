@@ -1,13 +1,19 @@
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from pyrogram.enums import ButtonStyle
+import random
 
 URL_SCHEMES = ("http://", "https://", "tg://")
+
+
+def random_button_style():
+    """Return one Telegram-native button colour (blue, green, or red)."""
+    return random.choice((ButtonStyle.PRIMARY, ButtonStyle.SUCCESS, ButtonStyle.DANGER))
 
 
 def _btn_style(style=None):
     if style in (ButtonStyle.DANGER, ButtonStyle.SUCCESS, ButtonStyle.PRIMARY):
         return style
-    return ButtonStyle.PRIMARY
+    return random_button_style()
 
 
 def valid_url(link):

@@ -38,6 +38,7 @@ from ...ext_utils.media_utils import get_md5_hash, get_media_info
 from ...telegram_helper.message_utils import delete_message
 from ...telegram_helper.tg_copy import call_with_flood_retry as _call_with_flood_retry
 from ...ext_utils.hyperul_utils import HypertgUpload
+from ...ext_utils.media_utils import format_tg_thumbnail
 
 LOGGER = getLogger(__name__)
 
@@ -49,7 +50,8 @@ class TelegramUploader:
         self._path = path
         self._start_time = time()
         self._total_files = 0
-        self._thumb = self._listener.thumb or f"thumbnails/{listener.user_id}.jpg"
+        self._thumb = self._listener.thumb
+        self._hd_thumb = None
         self._msgs_dict = {}
         self._corrupted = 0
         self._is_corrupted = False
@@ -79,17 +81,63 @@ class TelegramUploader:
             "LEECH_FONT": ("_lfont", ""),
         }
 
+        user_dict = self._listener.user_dict or {}
         for key, (attr, default) in settings_map.items():
-            setattr(
-                self,
-                attr,
-                self._listener.user_dict.get(key) or getattr(Config, key, default),
-            )
-        # Always deliver leeched files to the user in Bot PM through TgClient.bot
+            value = user_dict.get(key)
+            if value is None:
+                value = getattr(Config, key, default)
+            setattr(self, attr, value)
+
+        # Always deliver through the bot account. This avoids depending on the
+        # user session for private-message delivery.
         self._bot_pm = True
 
-        if self._thumb != "none" and not await aiopath.exists(self._thumb):
+        # WZML-compatible custom thumbnail resolution:
+        # explicit command thumbnail -> saved user thumbnail -> conventional
+        # per-user thumbnail path. Respect an explicit "none" mode.
+        explicit_thumb = self._listener.thumb
+        mode = str(user_dict.get("THUMBNAIL_MODE") or "").strip().lower()
+        saved_thumb = user_dict.get("THUMBNAIL") or f"thumbnails/{self._listener.user_id}.jpg"
+
+        if explicit_thumb == "none" or mode == "none":
+            self._thumb = "none"
+        elif explicit_thumb:
+            self._thumb = explicit_thumb
+        elif mode == "custom":
+            self._thumb = saved_thumb
+        elif mode == "auto":
             self._thumb = None
+        elif mode == "random":
+            # Random mode is handled by the existing automatic artwork path.
+            self._thumb = None
+        elif user_dict.get("THUMBNAIL") or await aiopath.isfile(saved_thumb):
+            # Match WZML's behavior: a configured custom thumbnail is applied
+            # even when older user records do not contain THUMBNAIL_MODE.
+            self._thumb = saved_thumb
+        else:
+            self._thumb = None
+
+        if self._thumb not in (None, "none"):
+            if not await aiopath.isfile(self._thumb):
+                LOGGER.warning(f"Configured thumbnail does not exist: {self._thumb}")
+                self._thumb = None
+            else:
+                # Telegram upload thumbnails must be JPEG, <=320x320 and <200 KB.
+                formatted = await sync_to_async(format_tg_thumbnail, self._thumb)
+                if formatted:
+                    self._thumb = formatted
+                else:
+                    LOGGER.warning(f"Could not format thumbnail: {self._thumb}")
+                    self._thumb = None
+
+        self._hd_thumb = None
+        if self._thumb not in (None, "none") and user_dict.get("HD_THUMBNAIL"):
+            self._hd_thumb = (
+                explicit_thumb if explicit_thumb and explicit_thumb != "none"
+                else saved_thumb
+            )
+            if not await aiopath.isfile(self._hd_thumb):
+                self._hd_thumb = self._thumb
 
     async def _msg_to_reply(self):
         if self._user_session and TgClient.user is None:
@@ -387,137 +435,188 @@ class TelegramUploader:
                     LOGGER.error(f"Failed To Send in BotPM:\n{err_msg}")
 
     async def _sequence_copies(self, src_chat):
-        for entry in self._upload_seq:
-            if entry is None:
-                continue
-            chat_id = entry["chat_id"]
-            msg_id = entry["msg_id"]
-            copy_from_chat = chat_id
-            copy_from_msg = msg_id
+        """Deliver every uploaded item to Bot PM and configured dump targets.
 
-            # If uploaded to a dump chat via user session, convert to a bot-authored message (ghost mode)
-            if (
-                chat_id != self._listener.user_id
-                and self._user_session
-                and not (isinstance(chat_id, int) and chat_id > 0)
-            ):
+        For user-session uploads, first make a bot-authored copy in the upload
+        chat (where possible). Keep the original until the DM and all requested
+        extra destinations have been copied successfully, then remove it.
+        """
+        for entry in self._upload_seq:
+            if not entry:
+                continue
+
+            original_chat = entry["chat_id"]
+            original_msg = entry["msg_id"]
+            copy_from_chat = original_chat
+            copy_from_msg = original_msg
+            ghost_copy = None
+
+            # User-session messages in channels/supergroups cannot reliably be
+            # copied by the bot to other destinations until the bot has its own
+            # copy. Make that copy first, but do not delete the original yet.
+            is_group_chat = isinstance(original_chat, int) and original_chat < 0
+            if self._user_session and is_group_chat:
                 try:
                     ghost_kwargs = {
-                        "chat_id": chat_id,
-                        "from_chat_id": chat_id,
-                        "message_id": msg_id,
+                        "chat_id": original_chat,
+                        "from_chat_id": original_chat,
+                        "message_id": original_msg,
                     }
-                    if chat_id == self._listener.up_dest and self._listener.chat_thread_id:
+                    if (
+                        original_chat == self._listener.up_dest
+                        and self._listener.chat_thread_id
+                    ):
                         ghost_kwargs["message_thread_id"] = self._listener.chat_thread_id
-                    bot_copy = await _call_with_flood_retry(
-                        TgClient.bot.copy_message,
-                        **ghost_kwargs,
+                    ghost_copy = await _call_with_flood_retry(
+                        TgClient.bot.copy_message, **ghost_kwargs
                     )
-                    copy_from_chat = chat_id
-                    copy_from_msg = bot_copy.id
-                    entry["chat_id"] = chat_id
-                    entry["msg_id"] = bot_copy.id
-                    if bot_copy.link:
-                        entry["link"] = bot_copy.link
-                    try:
-                        await TgClient.bot.delete_messages(
-                            chat_id=chat_id, message_ids=msg_id
-                        )
-                    except Exception:
-                        LOGGER.warning(
-                            "Delete Permission not given. "
-                            "Bot can't delete ghost mode original."
-                        )
-                except Exception as e:
-                    LOGGER.warning(
-                        f"Ghost mode copy skipped in {chat_id}: {e}"
+                    copy_from_chat = original_chat
+                    copy_from_msg = ghost_copy.id
+                    entry["chat_id"] = copy_from_chat
+                    entry["msg_id"] = copy_from_msg
+                    if getattr(ghost_copy, "link", None):
+                        entry["link"] = ghost_copy.link
+                except Exception as err:
+                    LOGGER.error(
+                        f"Could not create bot-authored copy in {original_chat}; "
+                        f"keeping original upload: {err}"
                     )
+                    continue
 
-            # 1. Always deliver to the user in Bot PM through TgClient.bot only
+            # If upload landed in a separate dump (e.g. dump-only mode), make
+            # a bot-owned staging copy in the command/source chat as WZML does.
+            if (
+                original_chat != src_chat.id
+                and not self._listener.up_dest
+                and not ghost_copy
+            ):
+                try:
+                    staged = await _call_with_flood_retry(
+                        TgClient.bot.copy_message,
+                        chat_id=src_chat.id,
+                        from_chat_id=original_chat,
+                        message_id=original_msg,
+                    )
+                    copy_from_chat, copy_from_msg = src_chat.id, staged.id
+                    entry["chat_id"], entry["msg_id"] = copy_from_chat, copy_from_msg
+                    if getattr(staged, "link", None):
+                        entry["link"] = staged.link
+                except Exception as err:
+                    LOGGER.error(f"Failed to stage upload from dump chat: {err}")
+                    continue
+
+            delivery_ok = True
+
+            # 1) Always copy to the requesting user's private chat using bot.
             if copy_from_chat != self._listener.user_id:
                 try:
-                    await _call_with_flood_retry(
-                        TgClient.bot.copy_message,
-                        chat_id=self._listener.user_id,
-                        from_chat_id=copy_from_chat,
-                        message_id=copy_from_msg,
-                        reply_parameters=(
-                            ReplyParameters(message_id=self._listener.pm_msg.id)
-                            if self._listener.pm_msg
-                            else None
-                        ),
-                    )
+                    dm_kwargs = {
+                        "chat_id": self._listener.user_id,
+                        "from_chat_id": copy_from_chat,
+                        "message_id": copy_from_msg,
+                    }
+                    if self._listener.pm_msg:
+                        dm_kwargs["reply_parameters"] = ReplyParameters(
+                            message_id=self._listener.pm_msg.id
+                        )
+                    await _call_with_flood_retry(TgClient.bot.copy_message, **dm_kwargs)
                 except Exception as err:
-                    if not self._listener.is_cancelled:
-                        err_msg = str(err)
-                        if "REPLY" in err_msg.upper() or "MESSAGE_ID_INVALID" in err_msg.upper():
-                            try:
-                                await _call_with_flood_retry(
-                                    TgClient.bot.copy_message,
-                                    chat_id=self._listener.user_id,
-                                    from_chat_id=copy_from_chat,
-                                    message_id=copy_from_msg,
-                                )
-                            except Exception as retry_err:
-                                LOGGER.error(f"Failed To Send in BotPM:\n{retry_err}")
-                        elif "Can't copy" in err_msg:
-                            LOGGER.warning(
-                                f"BotPM copy skipped (restricted content): {err_msg}"
+                    err_text = str(err)
+                    # A stale/deleted reply target should not prevent delivery.
+                    if "REPLY" in err_text.upper() or "MESSAGE_ID_INVALID" in err_text.upper():
+                        try:
+                            await _call_with_flood_retry(
+                                TgClient.bot.copy_message,
+                                chat_id=self._listener.user_id,
+                                from_chat_id=copy_from_chat,
+                                message_id=copy_from_msg,
                             )
+                        except Exception as retry_err:
+                            delivery_ok = False
+                            LOGGER.error(f"Failed to deliver upload to Bot PM: {retry_err}")
+                    else:
+                        delivery_ok = False
+                        if "Can't copy" in err_text:
+                            LOGGER.warning(f"Bot PM copy restricted: {err_text}")
                         else:
-                            LOGGER.error(f"Failed To Send in BotPM:\n{err_msg}")
+                            LOGGER.error(f"Failed to deliver upload to Bot PM: {err_text}")
 
-            # 2. Deliver to all configured dump chats, additional dumps, -up, -ud, and -ff destinations
+            # 2) Copy to primary, command-specific, and per-user extra dumps.
             extras = [
                 (self._listener.up_dest, self._listener.chat_thread_id),
                 (self._listener.cmd_up_dest, self._listener.cmd_thread_id),
                 *getattr(self._listener, "cmd_up_dests", ()),
                 *getattr(self._listener, "leech_dests", ()),
             ]
-            initial_thread = (
-                self._listener.chat_thread_id
-                if copy_from_chat == self._listener.up_dest
-                else None
-            )
             done = {
-                (copy_from_chat, initial_thread),
                 (copy_from_chat, None),
                 (self._listener.user_id, None),
             }
             for dest, thread_id in extras:
-                if not dest or dest == self._listener.user_id or (dest, thread_id) in done:
+                if not dest or dest == self._listener.user_id:
                     continue
-                done.add((dest, thread_id))
+                target = (dest, thread_id)
+                if target in done:
+                    continue
+                done.add(target)
                 try:
-                    copied_dump = await _call_with_flood_retry(
-                        TgClient.bot.copy_message,
-                        chat_id=dest,
-                        from_chat_id=copy_from_chat,
-                        message_id=copy_from_msg,
-                        message_thread_id=thread_id,
+                    kwargs = {
+                        "chat_id": dest,
+                        "from_chat_id": copy_from_chat,
+                        "message_id": copy_from_msg,
+                    }
+                    if thread_id:
+                        kwargs["message_thread_id"] = thread_id
+                    copied = await _call_with_flood_retry(
+                        TgClient.bot.copy_message, **kwargs
                     )
-                    if copied_dump and getattr(copied_dump, "link", None) and not entry.get("link"):
-                        entry["link"] = copied_dump.link
-                except Exception as e:
-                    if thread_id and (
-                        "THREAD" in str(e).upper()
-                        or "TOPIC" in str(e).upper()
-                        or "MESSAGE_ID_INVALID" in str(e).upper()
+                    if copied and getattr(copied, "link", None) and not entry.get("link"):
+                        entry["link"] = copied.link
+                except Exception as err:
+                    # Topics can be unavailable/misconfigured; retry without
+                    # thread routing, but count a final failure as undelivered.
+                    if thread_id and any(
+                        token in str(err).upper()
+                        for token in ("THREAD", "TOPIC", "MESSAGE_ID_INVALID")
                     ):
                         try:
-                            copied_dump = await _call_with_flood_retry(
+                            copied = await _call_with_flood_retry(
                                 TgClient.bot.copy_message,
                                 chat_id=dest,
                                 from_chat_id=copy_from_chat,
                                 message_id=copy_from_msg,
                             )
-                            if copied_dump and getattr(copied_dump, "link", None) and not entry.get("link"):
-                                entry["link"] = copied_dump.link
+                            if copied and getattr(copied, "link", None) and not entry.get("link"):
+                                entry["link"] = copied.link
                             continue
-                        except Exception as retry_e:
-                            e = retry_e
+                        except Exception as retry_err:
+                            err = retry_err
+                    delivery_ok = False
                     if not self._listener.is_cancelled:
-                        LOGGER.error(f"Failed to forward to {dest}: {e}")
+                        LOGGER.error(f"Failed to copy upload to dump {dest}: {err}")
+
+            # Delete only the user-session original, and only after the bot has
+            # successfully delivered all destinations. Never delete the bot's
+            # staging/ghost copy which is now the canonical source.
+            if (
+                delivery_ok
+                and self._user_session
+                and original_chat != copy_from_chat or (
+                    delivery_ok
+                    and self._user_session
+                    and original_chat == copy_from_chat
+                    and original_msg != copy_from_msg
+                )
+            ):
+                try:
+                    await TgClient.bot.delete_messages(
+                        chat_id=original_chat, message_ids=original_msg
+                    )
+                except Exception as err:
+                    LOGGER.warning(
+                        f"Could not delete original user-session upload "
+                        f"{original_chat}/{original_msg}: {err}"
+                    )
 
     async def _upload_file_task(self, file_, f_path, dirpath, user_session, seq_idx):
         up_path = None

@@ -56,6 +56,9 @@ class HypertgUpload(HypertgTransfer):
         is_video, is_audio, is_image = await get_document_type(file_path)
 
         thumb = user_thumb if user_thumb and user_thumb != "none" else None
+        hd_cover = getattr(self._obj, "_hd_thumb", None)
+        if hd_cover and not await aiopath.isfile(hd_cover):
+            hd_cover = None
 
         if not is_image and thumb is None:
             file_name = ospath.splitext(self._up_file)[0]
@@ -400,8 +403,13 @@ class HypertgUpload(HypertgTransfer):
                 if height:
                     kwargs["height"] = height
                 if thumb:
-                    kwargs["video_cover"] = thumb
                     kwargs["thumb"] = thumb
+                if hd_cover:
+                    # Telegram's custom video cover is separate from the small
+                    # upload thumbnail; keep the higher-resolution saved artwork.
+                    kwargs["video_cover"] = hd_cover
+                elif thumb:
+                    kwargs["video_cover"] = thumb
             elif key == "audios":
                 if duration:
                     kwargs["duration"] = duration
@@ -468,6 +476,9 @@ class HypertgUpload(HypertgTransfer):
         if key == "videos":
             if thumb:
                 kwargs["thumb"] = thumb
+            if hd_cover:
+                kwargs["video_cover"] = hd_cover
+            elif thumb:
                 kwargs["video_cover"] = thumb
             if duration:
                 kwargs["duration"] = duration

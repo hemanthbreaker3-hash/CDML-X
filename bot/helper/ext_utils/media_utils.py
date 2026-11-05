@@ -36,11 +36,11 @@ def get_md5_hash(up_path):
         return md5_hash.hexdigest()
 
 
-def _convert_image(src, dst):
+def _convert_image(src, dst, max_size=(320, 320)):
     with Image.open(src) as im:
         im = im.convert("RGB")
         resample = Image.Resampling.LANCZOS if hasattr(Image, "Resampling") else Image.LANCZOS
-        im.thumbnail((320, 320), resample)
+        im.thumbnail(max_size, resample)
         # Keep the best source detail possible within Telegram's thumbnail cap.
         # Lanczos is used for downsampling; avoid repeated recompression passes.
         quality = 100
@@ -128,7 +128,7 @@ async def create_thumb(msg, _id=""):
     return output
 
 
-async def download_image_thumb(url):
+async def download_image_thumb(url, max_size=(320, 320)):
     NON_IMAGE_TYPES = (
         "text/",
         "application/json",
@@ -173,7 +173,7 @@ async def download_image_thumb(url):
         return ""
 
     try:
-        await sync_to_async(_convert_image, tmp_path, output)
+        await sync_to_async(_convert_image, tmp_path, output, max_size)
     except Exception as e:
         LOGGER.error(f"Failed to process thumb image: {e}")
         with suppress(Exception):

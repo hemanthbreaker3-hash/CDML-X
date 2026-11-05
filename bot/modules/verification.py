@@ -11,7 +11,7 @@ from aiofiles import open as aiopen
 from pyrogram import ContinuePropagation, StopPropagation
 from pyrogram.enums import ChatType, ButtonStyle, ChatAction
 from pyrogram.filters import create
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import InlineKeyboardButton as _InlineKeyboardButton, InlineKeyboardMarkup
 
 from .. import LOGGER, bot_cache, shortener_dict, sudo_users, user_data
 from ..core.config_manager import Config
@@ -32,6 +32,14 @@ from ..helper.telegram_helper.tg_utils import (
 _SETTINGS_LOCK = Lock()
 _PAGE_SIZE = 8
 
+
+
+from ..helper.telegram_helper.button_build import random_button_style
+
+def InlineKeyboardButton(*args, **kwargs):
+    """Build a button with a random Telegram-native colour unless explicitly styled."""
+    kwargs.setdefault("style", random_button_style())
+    return _InlineKeyboardButton(*args, **kwargs)
 
 def _duration_seconds(raw):
     """Parse readable durations, plain seconds, or explicit unlimited validity."""
@@ -324,7 +332,7 @@ async def removepremium_command(_, message):
 
 
 async def premium_users_command(_, message):
-    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from pyrogram.types import InlineKeyboardButton as _InlineKeyboardButton, InlineKeyboardMarkup
     users = []
     now = time()
     for uid, data in user_data.items():
@@ -662,7 +670,7 @@ verification_guard_filter = create(_verification_guard_filter)
 
 
 async def premium_users_callback(_, query):
-    from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+    from pyrogram.types import InlineKeyboardButton as _InlineKeyboardButton, InlineKeyboardMarkup
     try:
         page = max(0, int(query.data.split(":", 1)[1]))
     except (ValueError, IndexError):

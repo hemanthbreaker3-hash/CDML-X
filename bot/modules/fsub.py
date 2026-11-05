@@ -7,7 +7,7 @@ from pathlib import Path
 from pyrogram import ContinuePropagation, StopPropagation
 from pyrogram.filters import create, regex
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import InlineKeyboardButton as _InlineKeyboardButton, InlineKeyboardMarkup
 
 from .. import LOGGER, sudo_users, user_data
 from ..core.config_manager import Config
@@ -17,6 +17,14 @@ _FILE = Path("fsub_channels.json")
 _CHANNELS = []
 _PENDING = {}
 
+
+
+from ..helper.telegram_helper.button_build import random_button_style
+
+def InlineKeyboardButton(*args, **kwargs):
+    """Build a button with a random Telegram-native colour unless explicitly styled."""
+    kwargs.setdefault("style", random_button_style())
+    return _InlineKeyboardButton(*args, **kwargs)
 
 def _load():
     global _CHANNELS

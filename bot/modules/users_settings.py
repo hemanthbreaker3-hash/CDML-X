@@ -2004,17 +2004,11 @@ async def _process_user_image_input(message, user_id: int, target_path: str, as_
     temp_dl = ""
     try:
         if raw_txt and raw_txt.startswith(("http://", "https://")):
-            dl = await download_image_thumb(raw_txt)
+            dl = await download_image_thumb(raw_txt, max_size=(1280, 1280))
             if not dl or not await aiopath.exists(dl):
                 return ""
             temp_dl = dl
         elif getattr(source_msg, "photo", None) or getattr(source_msg, "document", None):
-            if not as_png:
-                thumb_out = await create_thumb(source_msg, f"{user_id}_img_tmp")
-                if thumb_out and await aiopath.exists(thumb_out):
-                    if thumb_out != target_path:
-                        await move(thumb_out, target_path)
-                    return target_path
             temp_dl = await source_msg.download()
             if not temp_dl or not await aiopath.exists(temp_dl):
                 return ""
@@ -2030,8 +2024,8 @@ async def _process_user_image_input(message, user_id: int, target_path: str, as_
                     im.save(dst, "PNG", optimize=True)
                 else:
                     im = im.convert("RGB")
-                    im.thumbnail((320, 320), resample)
-                    im.save(dst, "JPEG", quality=95, subsampling=0, optimize=True, progressive=True)
+                    im.thumbnail((1280, 1280), resample)
+                    im.save(dst, "JPEG", quality=96, subsampling=0, optimize=True, progressive=True)
 
         await sync_to_async(_convert_sync, temp_dl, target_path, as_png)
         return target_path if await aiopath.exists(target_path) else ""

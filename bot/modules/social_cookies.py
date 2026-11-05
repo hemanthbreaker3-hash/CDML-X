@@ -5,7 +5,7 @@ from contextlib import suppress
 
 from pyrogram import filters
 from pyrogram.handlers import MessageHandler
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton as _InlineKeyboardButton
 
 from .. import bot_loop, user_data
 from ..core.config_manager import Config
@@ -23,6 +23,14 @@ from ..helper.telegram_helper.message_utils import delete_message, edit_message,
 _cookie_handlers = {}
 
 
+
+
+from ..helper.telegram_helper.button_build import random_button_style
+
+def InlineKeyboardButton(*args, **kwargs):
+    """Build a button with a random Telegram-native colour unless explicitly styled."""
+    kwargs.setdefault("style", random_button_style())
+    return _InlineKeyboardButton(*args, **kwargs)
 
 def _method(user_id, platform):
     methods = user_data.get(user_id, {}).get("SOCIAL_AUTH_METHODS", {})
