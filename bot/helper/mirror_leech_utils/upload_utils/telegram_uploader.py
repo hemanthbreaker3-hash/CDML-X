@@ -595,26 +595,45 @@ class TelegramUploader:
                     if not self._listener.is_cancelled:
                         LOGGER.error(f"Failed to copy upload to dump {dest}: {err}")
 
-            # Delete only the user-session original, and only after the bot has
-            # successfully delivered all destinations. Never delete the bot's
-            # staging/ghost copy which is now the canonical source.
-            if (
-                delivery_ok
-                and self._user_session
-                and original_chat != copy_from_chat or (
-                    delivery_ok
-                    and self._user_session
-                    and original_chat == copy_from_chat
-                    and original_msg != copy_from_msg
+            # Remove the original staging upload only after the Bot PM copy
+            # and every configured extra dump copy succeeded. For user-session
+            # uploads the bot-authored ghost/staging copy remains canonical;
+            # for bot uploads the original dump message is the staging item and
+            # can be removed after fan-out. Never delete a message already sent
+            # directly to the requesting user's private chat.
+            is_dump_source = (
+                original_chat == self._listener.up_dest
+                or original_chat == getattr(self._listener, "cmd_up_dest", None)
+                or any(
+                    dest == original_chat
+                    for dest, _thread in (
+                        *getattr(self._listener, "cmd_up_dests", ()),
+                        *getattr(self._listener, "leech_dests", ()),
+                    )
                 )
-            ):
+            )
+            should_remove_original = (
+                delivery_ok
+                and original_chat != self._listener.user_id
+                and is_dump_source
+                and (
+                    not self._user_session
+                    or original_chat != copy_from_chat
+                    or original_msg != copy_from_msg
+                )
+            )
+            if should_remove_original:
                 try:
                     await TgClient.bot.delete_messages(
                         chat_id=original_chat, message_ids=original_msg
                     )
+                    LOGGER.info(
+                        f"Deleted original staging upload {original_chat}/{original_msg} "
+                        "after successful Bot PM and dump delivery"
+                    )
                 except Exception as err:
                     LOGGER.warning(
-                        f"Could not delete original user-session upload "
+                        f"Could not delete original staging upload "
                         f"{original_chat}/{original_msg}: {err}"
                     )
 

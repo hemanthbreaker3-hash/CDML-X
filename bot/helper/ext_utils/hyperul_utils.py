@@ -175,6 +175,7 @@ class HypertgUpload(HypertgTransfer):
                         height=height,
                         artist=artist,
                         title=title,
+                        hd_cover=hd_cover,
                         user_only=hyper_user_only,
                     )
                 except Exception as hyper_err:
@@ -194,6 +195,7 @@ class HypertgUpload(HypertgTransfer):
                         height=height,
                         artist=artist,
                         title=title,
+                        hd_cover=hd_cover,
                         user_session=user_session or (up_size > 2097152000),
                     )
             else:
@@ -213,6 +215,7 @@ class HypertgUpload(HypertgTransfer):
                     height=height,
                     artist=artist,
                     title=title,
+                    hd_cover=hd_cover,
                     user_session=user_session,
                 )
 
@@ -366,6 +369,7 @@ class HypertgUpload(HypertgTransfer):
         height=0,
         artist="",
         title="",
+        hd_cover=None,
         user_only=False,
     ):
         if user_only:
@@ -419,6 +423,12 @@ class HypertgUpload(HypertgTransfer):
                     kwargs["title"] = title
                 if thumb:
                     kwargs["thumb"] = thumb
+            elif key == "documents":
+                # Telegram supports a custom thumbnail on sendDocument too.
+                # Previously the document branch omitted this argument, so
+                # custom thumbnails appeared on videos/audio but not documents.
+                if thumb and await aiopath.isfile(thumb):
+                    kwargs["thumb"] = thumb
 
             if key == "videos":
                 kwargs["video"] = file_path
@@ -448,6 +458,7 @@ class HypertgUpload(HypertgTransfer):
         height=0,
         artist="",
         title="",
+        hd_cover=None,
         user_session=False,
     ):
         up_size = ospath.getsize(file_path)
@@ -495,8 +506,9 @@ class HypertgUpload(HypertgTransfer):
                 kwargs["performer"] = artist
             if title:
                 kwargs["title"] = title
-        else:
-            if thumb:
+        elif key == "documents":
+            # sendDocument accepts `thumb`; sendPhoto does not.
+            if thumb and await aiopath.isfile(thumb):
                 kwargs["thumb"] = thumb
 
         if key == "videos":
