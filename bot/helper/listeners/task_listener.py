@@ -565,34 +565,6 @@ class TaskListener(TaskConfig):
             self.size = await get_path_size(up_dir)
             self.clear()
 
-        # Intro/Subtitle MUST run before metadata: apply_intro_subtitle overlays
-        # the intro via a filter_complex ("[0:v:0][1:v:0]overlay=...[outv]"),
-        # which produces a brand-new synthetic video stream that does not
-        # inherit the original stream's per-stream metadata/disposition (only
-        # "-map_metadata 0"/"-map_chapters 0" global-level carryover is done).
-        # Running metadata application first meant its -metadata:s:v:0 title=
-        # and thumbnail/disposition tags were written onto the pre-intro video
-        # stream, then silently discarded the moment intro_sub rebuilt that
-        # stream from scratch afterwards - so metadata and thumbnail looked
-        # "configured" but never stuck on the final uploaded file. Doing the
-        # intro/subtitle pass first and metadata last means metadata is always
-        # the final, un-clobbered write onto the file that actually gets sent.
-        if self.user_dict.get("INTRO_SUB_ENABLED", False) or getattr(
-            Config, "INTRO_SUB_ENABLED", False
-        ):
-            try:
-                from ..ext_utils.intro_sub_utils import apply_intro_subtitle
-
-                up_path = await apply_intro_subtitle(self, up_path, gid)
-                if self.is_cancelled:
-                    return
-                self.is_file = await aiopath.isfile(up_path)
-                await self._set_name_from_path(up_path, up_dir)
-                self.size = await get_path_size(up_dir)
-                self.clear()
-            except Exception as e:
-                LOGGER.error(f"Intro Subtitle processing error: {e}", exc_info=True)
-
         has_meta_dicts = any(
             [
                 (hasattr(self, "metadata_dict") and self.metadata_dict),
@@ -620,6 +592,22 @@ class TaskListener(TaskConfig):
             await self._set_name_from_path(up_path, up_dir)
             self.size = await get_path_size(up_path)
             self.clear()
+
+        if self.user_dict.get("INTRO_SUB_ENABLED", False) or getattr(
+            Config, "INTRO_SUB_ENABLED", False
+        ):
+            try:
+                from ..ext_utils.intro_sub_utils import apply_intro_subtitle
+
+                up_path = await apply_intro_subtitle(self, up_path, gid)
+                if self.is_cancelled:
+                    return
+                self.is_file = await aiopath.isfile(up_path)
+                await self._set_name_from_path(up_path, up_dir)
+                self.size = await get_path_size(up_dir)
+                self.clear()
+            except Exception as e:
+                LOGGER.error(f"Intro Subtitle processing error: {e}", exc_info=True)
 
         if self.is_leech and self.is_file:
             fname = ospath.basename(up_path)

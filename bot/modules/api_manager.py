@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 import requests
 from pyrogram import filters
 from pyrogram.handlers import MessageHandler, CallbackQueryHandler
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton as _InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from .. import LOGGER, user_data
 from ..core.tg_client import TgClient
 from ..core.config_manager import Config
@@ -15,14 +15,6 @@ from ..helper.ext_utils.db_handler import database
 DOMAIN = "gdflix.dev"
 DEFAULT_API = "https://ddl-y1lj.onrender.com/api/gdflix"
 _PENDING = "API_PENDING"
-
-
-from ..helper.telegram_helper.button_build import random_button_style
-
-def InlineKeyboardButton(*args, **kwargs):
-    """Build a button with a random Telegram-native colour unless explicitly styled."""
-    kwargs.setdefault("style", random_button_style())
-    return _InlineKeyboardButton(*args, **kwargs)
 
 def _valid_api(value):
     try:

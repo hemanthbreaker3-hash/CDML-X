@@ -8,7 +8,7 @@ from os import getenv
 
 from aiofiles import open as aiopen
 from cloudscraper import create_scraper
-from pyrogram.types import InlineKeyboardButton as _InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from .. import LOGGER, auth_chats, user_data
 from ..core.config_manager import Config
@@ -32,14 +32,6 @@ from ..helper.telegram_helper.message_utils import (
     send_message,
 )
 
-
-
-from ..helper.telegram_helper.button_build import random_button_style
-
-def InlineKeyboardButton(*args, **kwargs):
-    """Build a button with a random Telegram-native colour unless explicitly styled."""
-    kwargs.setdefault("style", random_button_style())
-    return _InlineKeyboardButton(*args, **kwargs)
 
 async def _build_start_buttons():
     buttons = ButtonMaker()

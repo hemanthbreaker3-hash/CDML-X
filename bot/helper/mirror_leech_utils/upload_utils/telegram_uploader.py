@@ -38,7 +38,6 @@ from ...ext_utils.media_utils import get_md5_hash, get_media_info
 from ...telegram_helper.message_utils import delete_message
 from ...telegram_helper.tg_copy import call_with_flood_retry as _call_with_flood_retry
 from ...ext_utils.hyperul_utils import HypertgUpload
-from ...ext_utils.media_utils import format_tg_thumbnail
 
 LOGGER = getLogger(__name__)
 
@@ -50,8 +49,7 @@ class TelegramUploader:
         self._path = path
         self._start_time = time()
         self._total_files = 0
-        self._thumb = self._listener.thumb
-        self._hd_thumb = None
+        self._thumb = self._listener.thumb or f"thumbnails/{listener.user_id}.jpg"
         self._msgs_dict = {}
         self._corrupted = 0
         self._is_corrupted = False
@@ -90,35 +88,8 @@ class TelegramUploader:
         # Always deliver leeched files to the user in Bot PM through TgClient.bot
         self._bot_pm = True
 
-        # Resolve per-user thumbnail mode and persisted path. An explicit -t
-        # thumbnail wins; otherwise honor the saved user setting.
-        explicit_thumb = bool(self._listener.thumb)
-        user_dict = self._listener.user_dict or {}
-        mode = str(user_dict.get("THUMBNAIL_MODE") or "").lower()
-        if not mode:
-            mode = "custom" if user_dict.get("THUMBNAIL") or await aiopath.exists(f"thumbnails/{self._listener.user_id}.jpg") else "auto"
-        if self._thumb is None:
-            if mode == "none":
-                self._thumb = "none"
-            elif mode == "custom":
-                self._thumb = user_dict.get("THUMBNAIL") or f"thumbnails/{self._listener.user_id}.jpg"
-            else:
-                self._thumb = None
-        if self._thumb not in (None, "none") and not await aiopath.isfile(self._thumb):
-            LOGGER.warning(f"Configured thumbnail does not exist: {self._thumb}")
+        if self._thumb != "none" and not await aiopath.exists(self._thumb):
             self._thumb = None
-        if self._thumb and self._thumb != "none":
-            # Telegram's thumbnail field is limited to 320x320 and <200 KB.
-            formatted = await sync_to_async(format_tg_thumbnail, self._thumb)
-            if formatted:
-                self._thumb = formatted
-            if user_dict.get("HD_THUMBNAIL"):
-                self._hd_thumb = (
-                    self._thumb if explicit_thumb
-                    else user_dict.get("THUMBNAIL") or f"thumbnails/{self._listener.user_id}.jpg"
-                )
-                if not await aiopath.isfile(self._hd_thumb):
-                    self._hd_thumb = self._thumb
 
     async def _msg_to_reply(self):
         if self._user_session and TgClient.user is None:

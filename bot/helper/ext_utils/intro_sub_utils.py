@@ -716,17 +716,8 @@ def _build_intro_overlay_mov_sync(
     anim = normalize_animation_name(animation)
     trans = normalize_transition_name(transition)
 
-    # Keep entrance and exit ranges disjoint, including very short (1–2s) intros.
-    # Previously both effects could claim all frames on a 1-second intro, causing
-    # the exit transition to be skipped completely.
     anim_frames = min(fps, max(1, total_frames // 3)) if anim not in ("None", "Appear") else 0
     trans_frames = min(fps, max(1, total_frames // 3)) if trans not in ("None", "Cut") else 0
-    if anim_frames + trans_frames > total_frames:
-        overflow = anim_frames + trans_frames - total_frames
-        reduce_trans = min(overflow, trans_frames)
-        trans_frames -= reduce_trans
-        overflow -= reduce_trans
-        anim_frames = max(0, anim_frames - overflow)
 
     cmd = [
         BinConfig.FFMPEG_NAME,
