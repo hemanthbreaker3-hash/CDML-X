@@ -242,7 +242,8 @@ class Mirror(TaskListener):
 
         self.select = args["-s"]
         self.seed = args["-d"]
-        self.name = args["-n"]
+        self.custom_name = str(args.get("-n") or "").strip()
+        self.name = self.custom_name
         self.up_dest = args["-up"]
         self.dump_dest = args["-ud"]
         self.category = args["-gc"]
@@ -817,6 +818,7 @@ class Mirror(TaskListener):
             "compress": self.compress,
             "extract": self.extract,
             "name": self.name,
+            "custom_name": getattr(self, "custom_name", ""),
             "folder_name": self.folder_name,
             "manual_merge": self.manual_merge,
             "auto_merge": self.auto_merge,
@@ -912,6 +914,7 @@ class Mirror(TaskListener):
                     if getattr(self, "vidMode", None):
                         sub_task.vidMode = [self.vidMode[0], self.vidMode[1], dict(self.vidMode[2] or {})]
                     sub_task.name = self.name
+                    sub_task.custom_name = getattr(self, "custom_name", "")
                     sub_task.folder_name = self.folder_name
                     sub_task.manual_merge = self.manual_merge
                     sub_task.auto_merge = self.auto_merge

@@ -247,6 +247,10 @@ class TaskConfig:
         self.rc_flags = ""
         self.tag = ""
         self.name = ""
+        # Requested output name supplied with the mirror/leech -n option.
+        # Keep it separate because download backends overwrite self.name with
+        # their detected source filename when a download completes.
+        self.custom_name = ""
         self.subname = ""
         self.category = ""
         self.index_link = ""

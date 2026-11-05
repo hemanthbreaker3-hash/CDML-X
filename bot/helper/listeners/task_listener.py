@@ -242,6 +242,41 @@ class TaskListener(TaskConfig):
                 return
 
         dl_path = f"{self.dir}/{self.name}"
+
+        # Apply the user-requested /mirror -n or /leech -n name only after
+        # resolving the backend's real downloaded path. The backend's
+        # download.name() assignment above must not silently discard -n.
+        requested_name = str(getattr(self, "custom_name", "") or "").strip()
+        if requested_name:
+            # A custom name is a basename, never an arbitrary filesystem path.
+            requested_name = ospath.basename(requested_name.replace("\\", "/")).strip()
+            if requested_name in ("", ".", ".."):
+                requested_name = ""
+            if requested_name:
+                if await aiopath.isfile(dl_path):
+                    original_ext = ospath.splitext(ospath.basename(dl_path))[1]
+                    if not ospath.splitext(requested_name)[1] and original_ext:
+                        requested_name = f"{requested_name}{original_ext}"
+                target_path = ospath.join(self.dir, requested_name)
+                if ospath.abspath(target_path) != ospath.abspath(dl_path):
+                    if await aiopath.exists(target_path):
+                        LOGGER.warning(
+                            "-n rename skipped because target already exists: %s",
+                            target_path,
+                        )
+                    else:
+                        try:
+                            await sync_to_async(os_replace, dl_path, target_path)
+                            dl_path = target_path
+                            self.name = ospath.basename(target_path)
+                            LOGGER.info("Applied -n custom output name: %s", self.name)
+                        except Exception:
+                            LOGGER.exception("Failed to apply -n custom output name: %s", requested_name)
+                            await self.on_upload_error(
+                                f"Could not rename downloaded item to {escape(requested_name)}"
+                            )
+                            return
+
         self.user_extract = bool(self.extract)
         self.is_file = await aiopath.isfile(dl_path)
         if self.join and not self.is_file:
