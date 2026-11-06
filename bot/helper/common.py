@@ -2195,6 +2195,12 @@ class TaskConfig:
             planner_tasks[key] = planner_info
             planner_store[key] = planner_info
 
+            planner_user = getattr(getattr(self, "message", None), "from_user", None)
+            planner_username = (
+                "@" + planner_user.username if planner_user and planner_user.username
+                else (planner_user.first_name if planner_user else f"User {self.user_id}")
+            )
+
             def format_planner_ui(p_info, is_dm=True, page=1):
                 cur_files = p_info.get("files", [])
                 cur_out = p_info.get("output_filename", out_filename)
@@ -2209,7 +2215,7 @@ class TaskConfig:
                 page_files = cur_files[start_idx:end_idx]
 
                 msg_text = (
-                    f"<b>🧩 Merge Planner</b>\n\n"
+                    f"<b>🧩 Merge Planner</b>\n👤 <b>User:</b> {escape(planner_username)}\n\n"
                     f"• <b>Output Filename:</b> <code>{escape(cur_out)}</code>\n"
                     f"• <b>Files to Merge ({total_files}):</b> [Page {page}/{total_pages}]\n"
                     + "\n".join([f"{start_idx + idx + 1}. {escape(fn)}" for idx, fn in enumerate(page_files)])
@@ -2265,7 +2271,7 @@ class TaskConfig:
                 updated_files = p_data.get("files", file_names)
                 updated_out = p_data.get("output_filename", out_filename)
                 save_text = (
-                    f"<b>🧩 Merge Planner (Saved)</b>\n\n"
+                    f"<b>🧩 Merge Planner (Saved)</b>\n👤 <b>User:</b> {escape(planner_username)}\n\n"
                     f"• <b>Configured Output:</b> <code>{escape(updated_out)}</code>\n"
                     f"• <b>Configured File Order:</b>\n"
                     + "\n".join([f"{idx + 1}. {escape(fn)}" for idx, fn in enumerate(updated_files)])
@@ -2300,7 +2306,7 @@ class TaskConfig:
                 with suppress(Exception):
                     await edit_message(
                         dm_msg,
-                        f"<b>⏰ Merge Planner Timed Out (10 min)</b>\n\n"
+                        f"<b>⏰ Merge Planner Timed Out (10 min)</b>\n👤 <b>User:</b> {escape(planner_username)}\n\n"
                         f"Automatically proceeding with current file order and default output: <code>{escape(out_filename)}</code>"
                     )
             except Exception as e:

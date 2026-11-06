@@ -1,4 +1,5 @@
 import asyncio
+import html
 import mimetypes
 import os
 import re
@@ -112,6 +113,7 @@ async def _download_tg(msg, dest_dir):
 def _planner_text(s):
     lines = [
         "<b>🧩 CANTARELLABOTS Track Merge Planner</b>",
+        f"👤 <b>User:</b> {html.escape(s.get('username') or 'Unknown user')}",
         "",
         f"🎬 <b>Video:</b> <code>{s['video_name']}</code>",
         f"🔊 <b>Audio tracks:</b> {sum(x['kind']=='audio' for x in s['tracks'])}",
@@ -215,29 +217,30 @@ async def _start_ffmpeg(s):
         if t["kind"] == "audio":
             # Existing source audio tracks precede added tracks; metadata is
             # applied to the added track using ffmpeg's output stream index.
-            audio_index += 1
             out_idx = audio_index
+            audio_index += 1
             cmd += [f"-metadata:s:a:{out_idx}", f"language={t.get('language') or 'und'}"]
             if t.get("title"):
                 cmd += [f"-metadata:s:a:{out_idx}", f"title={t['title']}"]
         else:
+            out_idx = sub_index
             sub_index += 1
-            cmd += [f"-metadata:s:s:{sub_index}", f"language={t.get('language') or 'und'}"]
+            cmd += [f"-metadata:s:s:{out_idx}", f"language={t.get('language') or 'und'}"]
             if t.get("title"):
-                cmd += [f"-metadata:s:s:{sub_index}", f"title={t['title']}"]
+                cmd += [f"-metadata:s:s:{out_idx}", f"title={t['title']}"]
 
     cmd += [output]
-    status = await send_message(s["user_id"], "⏳ <b>Merging video + tracks…</b>")
+    status = await send_message(s["user_id"], f"⏳ <b>Merging video + tracks…</b>\\n👤 <b>User:</b> {html.escape(s.get('username') or 'Unknown user')}")
     stdout, stderr, code = await cmd_exec(cmd)
     if code != 0 or not os.path.exists(output):
         await edit_message(status, f"❌ <b>Merge failed.</b>\n<pre>{(stderr or stdout or 'FFmpeg failed')[-3500:]}</pre>")
         return
     try:
         if output.lower().endswith(".mp4"):
-            await TgClient.bot.send_video(s["user_id"], output, caption="🎬 <b>CANTARELLABOTS Track Merge Complete</b>")
+            await TgClient.bot.send_video(s["user_id"], output, caption=f"🎬 <b>CANTARELLABOTS Track Merge Complete</b>\\n👤 <b>User:</b> {html.escape(s.get('username') or 'Unknown user')}")
         else:
-            await TgClient.bot.send_document(s["user_id"], output, caption="🎬 <b>CANTARELLABOTS Track Merge Complete</b>")
-        await edit_message(status, "✅ <b>Merge completed and uploaded.</b>")
+            await TgClient.bot.send_document(s["user_id"], output, caption=f"🎬 <b>CANTARELLABOTS Track Merge Complete</b>\\n👤 <b>User:</b> {html.escape(s.get('username') or 'Unknown user')}")
+        await edit_message(status, f"✅ <b>Merge completed and uploaded.</b>\\n👤 <b>User:</b> {html.escape(s.get('username') or 'Unknown user')}")
     finally:
         with suppress(Exception):
             os.remove(output)
@@ -256,16 +259,21 @@ async def merge_command(_, message):
             "Direct links are also supported with <code>audio|URL</code> or <code>sub|URL</code>."
         )
 
+    if not message.from_user:
+        return await send_message(message, "❌ This command must be started by a Telegram user account.")
     sid = f"{message.from_user.id}_{message.id}"
     work = os.path.join("trackmerge", sid)
     os.makedirs(work, exist_ok=True)
     try:
         video_path = await video.download(file_name=os.path.join(work, _safe_name(getattr(video.video or video.document, "file_name", None), "video.mkv")))
     except Exception as e:
-        return await send_message(message, f"❌ Failed to download video: <code>{e}</code>")
+        import shutil
+        shutil.rmtree(work, ignore_errors=True)
+        return await send_message(message, f"❌ Failed to download video: <code>{html.escape(str(e))}</code>")
 
     s = {
-        "id": sid, "user_id": message.from_user.id, "chat_id": message.chat.id,
+         "id": sid, "user_id": message.from_user.id, "chat_id": message.chat.id,
+        "username": ("@" + message.from_user.username) if message.from_user.username else (message.from_user.first_name or "Telegram user"),
         "workdir": work, "video_path": video_path,
         "video_name": os.path.basename(video_path), "tracks": [],
         "output": os.path.splitext(os.path.basename(video_path))[0] + "_merged.mkv",
@@ -441,3 +449,8 @@ async def trackmerge_callback(_, query):
         await edit_message(s["message"], _planner_text(s) + "\n\n🚀 <b>Processing started…</b>")
         SESSIONS.pop(sid, None)
         return await _start_ffmpeg(s)
+
+
+# /merge1 uses the same stable merge workflow and planner as /merge.
+async def merge1_command(client, message):
+    return await merge_command(client, message)
