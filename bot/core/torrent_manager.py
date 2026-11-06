@@ -46,16 +46,26 @@ def _qbit_password():
     )
 
 
-async def _connect_aria2(retries=5, delay=2):
+async def _connect_aria2(retries=30, delay=1):
+    """Wait for the local aria2 RPC daemon instead of failing on its startup race."""
     from aioaria2.exceptions import Aria2rpcException
 
-    for i in range(retries):
+    last_error = None
+    for attempt in range(retries):
         try:
-            return await Aria2WebsocketClient.new("http://localhost:6800/jsonrpc")
-        except Aria2rpcException:
-            if i == retries - 1:
-                raise
-            await sleep(delay)
+            # Use IPv4 explicitly; localhost may resolve to ::1 while aria2
+            # is bound only to 127.0.0.1 on some VPS configurations.
+            return await Aria2WebsocketClient.new("http://127.0.0.1:6800/jsonrpc")
+        except (Aria2rpcException, ClientError, OSError, TimeoutError) as exc:
+            last_error = exc
+            if attempt + 1 < retries:
+                await sleep(min(delay * (attempt + 1), 5))
+
+    raise RuntimeError(
+        "Unable to connect to aria2 RPC at 127.0.0.1:6800 after "
+        f"{retries} attempts. Check that aria2c is installed and setpkgs.sh "
+        f"started it successfully. Last error: {last_error}"
+    ) from last_error
 
 
 class TorrentManager:

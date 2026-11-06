@@ -31,7 +31,6 @@ $ARIA2_CMD \
     --optimize-concurrent-downloads=true \
     --max-overall-download-limit=0 \
     --max-download-limit=0 \
-    --retry-on-http-error=408,429,500,502,503,504 \
     --continue=true \
     --auto-file-renaming=true \
     --allow-overwrite=true \
@@ -67,6 +66,32 @@ $ARIA2_CMD \
     --save-session= \
     --save-session-interval=0 \
     --bt-tracker="[$tracker_list]"
+
+# aria2 1.37.0 does not support --retry-on-http-error. Do not let an
+# unsupported option silently leave the bot without its RPC daemon.
+ARIA2_READY=0
+for _ in $(seq 1 30); do
+    if command -v ss >/dev/null 2>&1; then
+        if ss -ltnH 'sport = :6800' 2>/dev/null | grep -q .; then
+            ARIA2_READY=1
+            break
+        fi
+    elif command -v curl >/dev/null 2>&1 && curl -fsS --max-time 1 http://127.0.0.1:6800/jsonrpc >/dev/null 2>&1; then
+        ARIA2_READY=1
+        break
+    fi
+    sleep 1
+done
+
+if [ "$ARIA2_READY" -ne 1 ]; then
+    echo "setpkgs: ERROR: aria2 RPC did not start on 127.0.0.1:6800" >&2
+    pgrep -a -f '[a]ria2c' >&2 || true
+    if command -v ss >/dev/null 2>&1; then
+        ss -ltnp 2>/dev/null | grep ':6800' >&2 || true
+    fi
+    exit 1
+fi
+echo "setpkgs: aria2 RPC is listening on 127.0.0.1:6800" >&2
 
 if command -v "$ARIA2C" >/dev/null 2>&1; then
     echo "setpkgs: $("$ARIA2C" --version 2>/dev/null | head -n 1) (latest upstream stable: 1.37.0)" >&2
