@@ -88,6 +88,22 @@ class TaskListener(TaskConfig):
         self.proceed_count = 0
         self.progress = True
 
+    async def _postprocess_or_keep(self, label, operation, current_path):
+        """Run an optional post-process step without losing its valid input."""
+        try:
+            result = await operation
+            if result and await aiopath.exists(str(result)):
+                return str(result)
+            if current_path and await aiopath.exists(str(current_path)):
+                LOGGER.warning("%s produced no valid output; keeping original: %s", label, current_path)
+                return str(current_path)
+            return result
+        except Exception:
+            LOGGER.exception("%s failed; keeping original downloaded file", label)
+            if current_path and await aiopath.exists(str(current_path)):
+                return str(current_path)
+            raise
+
     async def _set_name_from_path(self, path, base_dir=None):
         """Keep file names intact when tool outputs live in nested folders."""
         if not path:
@@ -294,8 +310,10 @@ class TaskListener(TaskConfig):
         # so all downloader types receive the same opt-in behavior. An
         # explicit -vt choice wins; selecting Audio Split there still uses
         # the same saved Auto/Manual settings below.
+        task_audio_split = bool(getattr(self, "force_audio_split", False))
+        user_audio_split = bool(getattr(self, "user_dict", {}).get("AUDIO_SPLIT_ENABLED", False))
         if (not getattr(self, "vt_requested", False)
-                and bool(getattr(self, "user_dict", {}).get("AUDIO_SPLIT_ENABLED", False))):
+                and (task_audio_split or user_audio_split)):
             self.vt_requested = True
             self.vt_mode = "audio_split"
             self.vidMode = ["audio_split", "Audio Split (One Video per Audio Track)",
@@ -303,7 +321,8 @@ class TaskListener(TaskConfig):
             vid_mode = self.vidMode
             selected_vt_mode = "audio_split"
             LOGGER.info(
-                "Automatic Audio Split enabled for completed task (mode=%s, languages=%s)",
+                "Audio Split enabled for completed task (source=%s, mode=%s, languages=%s)",
+                "command flag" if task_audio_split else "user setting",
                 getattr(self, "user_dict", {}).get("AUDIO_SPLIT_MODE", "auto"),
                 getattr(self, "user_dict", {}).get("AUDIO_SPLIT_LANGUAGES", ""),
             )
@@ -495,7 +514,7 @@ class TaskListener(TaskConfig):
 
         if getattr(self, "track_manager", False):
             from ..ext_utils.track_manager import proceed_track_manager
-            up_path = await proceed_track_manager(self, up_path, gid)
+            up_path = await self._postprocess_or_keep("Track manager", proceed_track_manager(self, up_path, gid), up_path)
             if self.is_cancelled or not up_path:
                 return
             self.is_file = await aiopath.isfile(up_path)
@@ -504,7 +523,7 @@ class TaskListener(TaskConfig):
             self.clear()
 
         if getattr(self, "manual_reorder", False) or getattr(self, "manual_rm_stream", False) or getattr(self, "reorder_aud", None) or getattr(self, "reorder_sub", None):
-            up_path = await self.proceed_reorder(up_path, gid)
+            up_path = await self._postprocess_or_keep("Track reorder", self.proceed_reorder(up_path, gid), up_path)
             if self.is_cancelled or not up_path:
                 return
             self.is_file = await aiopath.isfile(up_path)
@@ -522,7 +541,7 @@ class TaskListener(TaskConfig):
 
         if enable_encode:
             try:
-                up_path = await self.proceed_encode(up_path, gid)
+                up_path = await self._postprocess_or_keep("Encode", self.proceed_encode(up_path, gid), up_path)
             except Exception as e:
                 LOGGER.error(f"Encode processing error: {e}")
             if self.is_cancelled or not up_path:
@@ -534,7 +553,7 @@ class TaskListener(TaskConfig):
 
         if enable_compress:
             try:
-                up_path = await self.proceed_compress_video(up_path, gid)
+                up_path = await self._postprocess_or_keep("Video compression", self.proceed_compress_video(up_path, gid), up_path)
             except Exception as e:
                 LOGGER.error(f"Compress processing error: {e}")
             if self.is_cancelled or not up_path:
@@ -546,7 +565,7 @@ class TaskListener(TaskConfig):
 
         if enable_watermark:
             try:
-                up_path = await self.proceed_watermark(up_path, gid)
+                up_path = await self._postprocess_or_keep("Watermark", self.proceed_watermark(up_path, gid), up_path)
             except Exception as e:
                 LOGGER.error(f"Watermark processing error: {e}")
             if self.is_cancelled or not up_path:
@@ -558,8 +577,8 @@ class TaskListener(TaskConfig):
             await remove_excluded_files(up_dir, self.excluded_extensions)
 
         if getattr(self, "auto_merge", False) or getattr(self, "manual_merge", False):
-            up_path = await self.proceed_merge(
-                up_path, gid, getattr(self, "merge_custom_name", "")
+            up_path = await self._postprocess_or_keep(
+                "Merge", self.proceed_merge(up_path, gid, getattr(self, "merge_custom_name", "")), up_path
             )
             if self.is_cancelled or not up_path:
                 return
@@ -571,7 +590,7 @@ class TaskListener(TaskConfig):
             self.clear()
 
         if getattr(self, "manual_trim", False):
-            up_path = await self.proceed_trim(up_path, gid)
+            up_path = await self._postprocess_or_keep("Trim", self.proceed_trim(up_path, gid), up_path)
             if self.is_cancelled or not up_path:
                 return
             self.is_file = await aiopath.isfile(up_path)
@@ -580,7 +599,7 @@ class TaskListener(TaskConfig):
             self.clear()
 
         if getattr(self, "manual_extract", False):
-            up_path = await self.proceed_extract_content(up_path, gid)
+            up_path = await self._postprocess_or_keep("Content extraction", self.proceed_extract_content(up_path, gid), up_path)
             if self.is_cancelled or not up_path:
                 return
             self.is_file = await aiopath.isfile(up_path)
@@ -589,10 +608,7 @@ class TaskListener(TaskConfig):
             self.clear()
 
         if self.ffmpeg_cmds:
-            up_path = await self.proceed_ffmpeg(
-                up_path,
-                gid,
-            )
+            up_path = await self._postprocess_or_keep("Custom FFmpeg", self.proceed_ffmpeg(up_path, gid), up_path)
             if self.is_cancelled:
                 return
             self.is_file = await aiopath.isfile(up_path)
@@ -618,7 +634,7 @@ class TaskListener(TaskConfig):
             try:
                 from ..ext_utils.intro_sub_utils import apply_intro_subtitle
 
-                up_path = await apply_intro_subtitle(self, up_path, gid)
+                up_path = await self._postprocess_or_keep("Intro/subtitle processing", apply_intro_subtitle(self, up_path, gid), up_path)
                 if self.is_cancelled:
                     return
                 self.is_file = await aiopath.isfile(up_path)
@@ -639,15 +655,19 @@ class TaskListener(TaskConfig):
         strip_meta = self.user_dict.get("STRIP_METADATA_ENABLE", False) or getattr(Config, "STRIP_METADATA_ENABLE", False)
 
         if has_meta_dicts or strip_meta:
-            up_path = await apply_metadata_title(
-                self,
+            up_path = await self._postprocess_or_keep(
+                "Metadata processing",
+                apply_metadata_title(
+                    self,
+                    up_path,
+                    gid,
+                    getattr(self, "metadata_dict", {}),
+                    getattr(self, "audio_metadata_dict", {}),
+                    getattr(self, "video_metadata_dict", {}),
+                    getattr(self, "subtitle_metadata_dict", {}),
+                    strip_metadata=strip_meta,
+                ),
                 up_path,
-                gid,
-                getattr(self, "metadata_dict", {}),
-                getattr(self, "audio_metadata_dict", {}),
-                getattr(self, "video_metadata_dict", {}),
-                getattr(self, "subtitle_metadata_dict", {}),
-                strip_metadata=strip_meta,
             )
             if self.is_cancelled:
                 return
@@ -677,7 +697,7 @@ class TaskListener(TaskConfig):
             await self._set_name_from_path(up_path, up_dir)
 
         if self.screen_shots:
-            up_path = await self.generate_screenshots(up_path)
+            up_path = await self._postprocess_or_keep("Screenshot generation", self.generate_screenshots(up_path), up_path)
             if self.is_cancelled:
                 return
             self.is_file = await aiopath.isfile(up_path)
@@ -685,10 +705,7 @@ class TaskListener(TaskConfig):
             self.size = await get_path_size(up_dir)
 
         if self.convert_audio or self.convert_video:
-            up_path = await self.convert_media(
-                up_path,
-                gid,
-            )
+            up_path = await self._postprocess_or_keep("Media conversion", self.convert_media(up_path, gid), up_path)
             if self.is_cancelled:
                 return
             self.is_file = await aiopath.isfile(up_path)
@@ -697,7 +714,7 @@ class TaskListener(TaskConfig):
             self.clear()
 
         if self.sample_video:
-            up_path = await self.generate_sample_video(up_path, gid)
+            up_path = await self._postprocess_or_keep("Sample video generation", self.generate_sample_video(up_path, gid), up_path)
             if self.is_cancelled:
                 return
             self.is_file = await aiopath.isfile(up_path)
@@ -755,9 +772,8 @@ class TaskListener(TaskConfig):
             ):
                 self.compress = False
             else:
-                up_path = await self.proceed_compress(
-                    up_path,
-                    gid,
+                up_path = await self._postprocess_or_keep(
+                    "Archive compression", self.proceed_compress(up_path, gid), up_path
                 )
                 self.is_file = await aiopath.isfile(up_path)
                 if self.is_cancelled:

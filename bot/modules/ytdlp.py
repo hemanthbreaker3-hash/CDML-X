@@ -327,6 +327,8 @@ class YtDlp(TaskListener):
             "-bt": False,
             "-ut": False,
             "-vt": False,
+            "-as": False,
+            "-audosplit": False,
             "-trackmanager": False,
             "-tr": False,
             "-track": False,
@@ -350,6 +352,12 @@ class YtDlp(TaskListener):
             "-tl": "",
             "-ff": set(),
         }
+
+        # Audio split aliases are standalone boolean flags and must not consume the URL.
+        for flag in ("-as", "-audosplit"):
+            if flag in input_list:
+                args[flag] = True
+        input_list = [token for token in input_list if token not in ("-as", "-audosplit")]
 
         if "-vt" in input_list:
             args["-vt"] = True
@@ -401,6 +409,7 @@ class YtDlp(TaskListener):
         self.link = args["link"]
         self.compress = args["-z"]
         self.extract = args["-e"]
+        self.force_audio_split = bool(args.get("-as") or args.get("-audosplit"))
         self.join = args["-j"]
         if args.get("-vt", False):
             self.vt_requested = True

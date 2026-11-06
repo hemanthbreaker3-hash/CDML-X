@@ -1226,6 +1226,10 @@ class TaskConfig:
                 b"BZh",
                 b"\xfd7zXZ\x00",
                 b"(\xb5/\xfd",
+                b"\x28\xb5\x2f\xfd",
+                b"\x04\x22\x4d\x18",
+                b"\x89LZO\x00\r\n\x1a\n",
+                b"MSCF",
             )):
                 return True
             if len(head) >= 262 and head[257:262] == b"ustar":
@@ -1270,15 +1274,28 @@ class TaskConfig:
         extracted_ok = False
         if self.is_file:
             self.proceed_count += 1
-            t_path = get_base_name(dl_path)
-            # Strip trailing media/file extension from directory name (e.g. Movie.mkv.zip -> Movie)
-            inner_ext = ospath.splitext(t_path)[1].lower()
-            if inner_ext in (
+            try:
+                t_path = get_base_name(dl_path)
+            except Exception:
+                # `-e` is allowed to identify archives by their file signature,
+                # even when the server gives them an unusual/no archive suffix.
+                t_path = ospath.splitext(dl_path)[0]
+            # Repeatedly strip known inner/media/archive suffixes. Examples:
+            # Movie.mkv.zip, Movie.mkv.zip.zip, backup.tar.gz, file.bin.7z.
+            inner_suffixes = (
                 ".mkv", ".mp4", ".avi", ".mov", ".flv", ".wmv", ".webm", ".m4v", ".ts",
                 ".mp3", ".flac", ".aac", ".m4a", ".wav", ".ogg", ".opus", ".srt", ".ass",
                 ".ssa", ".vtt", ".sub", ".pdf", ".txt", ".apk", ".exe", ".bin",
-            ):
-                t_path = ospath.splitext(t_path)[0]
+                ".zip", ".7z", ".rar", ".tar", ".gz", ".gzip", ".bz2", ".xz", ".zst",
+            )
+            while True:
+                suffix = ospath.splitext(t_path)[1].lower()
+                if suffix not in inner_suffixes:
+                    break
+                stripped = ospath.splitext(t_path)[0]
+                if not stripped or stripped == t_path:
+                    break
+                t_path = stripped
             if not t_path or t_path == dl_path or await aiopath.isfile(t_path):
                 t_path = f"{ospath.splitext(dl_path)[0]}_extracted"
                 if t_path == dl_path or await aiopath.isfile(t_path):
@@ -1336,7 +1353,12 @@ class TaskConfig:
             nested_archives = []
             for dirpath, _, files in await sync_to_async(walk, str(result_path), topdown=False):
                 for file_ in files:
-                    if is_first_archive_split(file_) or (is_archive(file_) and not is_archive_split(file_)):
+                    nested_path = ospath.join(dirpath, file_)
+                    if (
+                        is_first_archive_split(file_)
+                        or (is_archive(file_) and not is_archive_split(file_))
+                        or (not is_archive_split(file_) and await sync_to_async(self._is_archive_magic_sync, nested_path))
+                    ):
                         nested_archives.append((dirpath, file_))
             for dirpath, file_ in nested_archives:
                 if self.is_cancelled:

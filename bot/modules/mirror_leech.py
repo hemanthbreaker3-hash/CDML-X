@@ -170,6 +170,8 @@ class Mirror(TaskListener):
             "-ad": False,
             "-yt": False,
             "-vt": False,
+            "-as": False,
+            "-audosplit": False,
             "-seedr": False,
             "-ht": False,
             "-trackmanager": False,
@@ -197,6 +199,12 @@ class Mirror(TaskListener):
             "-tl": "",
             "-ff": set(),
         }
+
+        # Audio split aliases are standalone boolean flags and must not consume the URL.
+        for flag in ("-as", "-audosplit"):
+            if flag in input_list:
+                args[flag] = True
+        input_list = [token for token in input_list if token not in ("-as", "-audosplit")]
 
         # -vt is a standalone boolean flag. The generic parser otherwise treats
         # the following URL as its value (e.g. `/lh -vt https://...`), which
@@ -251,6 +259,7 @@ class Mirror(TaskListener):
         self.link = args["link"]
         self.compress = args["-z"]
         self.extract = args["-e"]
+        self.force_audio_split = bool(args.get("-as") or args.get("-audosplit"))
         self.join = args["-j"]
         self.thumb = args["-t"]
         self.thumb_url_override = isinstance(self.thumb, str) and self.thumb.lower().startswith(("http://", "https://"))

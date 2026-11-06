@@ -502,7 +502,7 @@ yt = """<b>yt-dlp Supported Link Mirroring & Leeching</b>
 <code>/yl link</code>
 
 <b>Arguments:</b>
-• <code>-n new_name</code>: Custom output filename.
+• <code>-n new_name</code>: Custom output filename.\n• <code>-as</code> / <code>-audosplit</code>: Force Audio Split for this task, even when your saved Audio Split setting is OFF.
 • <code>-s</code>: Quality & format selection buttons.
 • <code>-opt options</code>: Custom yt-dlp option dict or pipe-separated string.
 • <code>-sp split_size</code>: Leech split size.

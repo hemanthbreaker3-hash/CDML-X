@@ -21,11 +21,19 @@ async def add_aria2_download(listener, dpath, header, ratio, seed_time):
         return
     a2c_opt = {
         "dir": dpath,
+        # Aria2 1.37.0 is the latest upstream stable release. Keep each
+        # HTTP(S) task at the documented per-server connection ceiling and
+        # use larger pieces to reduce request/metadata overhead on big files.
         "max-connection-per-server": "16",
         "split": "16",
-        "min-split-size": "1M",
-        "piece-length": "1M",
-        "disk-cache": "128M",
+        "min-split-size": "8M",
+        "disk-cache": "256M",
+        "file-allocation": "falloc",
+        "continue": "true",
+        "max-tries": "30",
+        "retry-wait": "5",
+        "connect-timeout": "30",
+        "timeout": "60",
         "max-file-not-found": "0",
         "stream-piece-selector": "geom",
     }

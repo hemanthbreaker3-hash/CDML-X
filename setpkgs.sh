@@ -24,11 +24,14 @@ $ARIA2_CMD \
     --rpc-listen-all=true \
     --enable-rpc=true \
     --rpc-max-request-size=1024M \
-    --max-concurrent-downloads=1000 \
+    --max-concurrent-downloads=8 \
     --max-connection-per-server=16 \
     --split=16 \
-    --min-split-size=1M \
+    --min-split-size=8M \
     --optimize-concurrent-downloads=true \
+    --max-overall-download-limit=0 \
+    --max-download-limit=0 \
+    --retry-on-http-error=408,429,500,502,503,504 \
     --continue=true \
     --auto-file-renaming=true \
     --allow-overwrite=true \
@@ -36,7 +39,7 @@ $ARIA2_CMD \
     --content-disposition-default-utf8=true \
     --user-agent="Wget/1.12" \
     --http-accept-gzip=true \
-    --max-tries=20 \
+    --max-tries=30 \
     --max-file-not-found=0 \
     --check-certificate=false \
     --bt-enable-lpd=true \
@@ -53,10 +56,10 @@ $ARIA2_CMD \
     --socket-recv-buffer-size=16M \
     --disable-ipv6=false \
     --connect-timeout=30 \
-    --timeout=30 \
+    --timeout=60 \
     --retry-wait=5 \
     --file-allocation=falloc \
-    --disk-cache=128M \
+    --disk-cache=256M \
     --check-integrity=true \
     --max-upload-limit=1K \
     --quiet=true \
@@ -64,6 +67,10 @@ $ARIA2_CMD \
     --save-session= \
     --save-session-interval=0 \
     --bt-tracker="[$tracker_list]"
+
+if command -v "$ARIA2C" >/dev/null 2>&1; then
+    echo "setpkgs: $("$ARIA2C" --version 2>/dev/null | head -n 1) (latest upstream stable: 1.37.0)" >&2
+fi
 
 if [ -n "$SABNZBDPLUS" ]; then
     echo "setpkgs: starting SABnzbd on 127.0.0.1:8070" >&2

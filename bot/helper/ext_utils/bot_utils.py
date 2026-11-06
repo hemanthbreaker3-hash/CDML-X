@@ -271,6 +271,8 @@ def arg_parser(items, arg_base):
         "-tm",
         "-tc",
         "-vt",
+        "-as",
+        "-audosplit",
     }
     always_bool_flags = {
         "-s",
@@ -294,6 +296,8 @@ def arg_parser(items, arg_base):
         "-tm",
         "-tc",
         "-vt",
+        "-as",
+        "-audosplit",
     }
     optional_val_bool_flags = {"-e", "-z", "-b", "-d"}
 
