@@ -1,0 +1,20 @@
+CDML-X DOWNLOAD SPEED OPTIMIZATION
+==================================
+
+Changes:
+- Direct-download folders/files are now submitted to aria2 concurrently instead
+  of waiting for each file to finish before starting the next one.
+- The status display aggregates progress and throughput across active aria2 jobs.
+- aria2 defaults to 8 concurrent jobs, up to 16 connections per server, 16-way
+  splitting, and 1 MiB minimum split size.
+- No artificial download-rate cap is configured.
+
+Important:
+These are throughput-oriented defaults, not a guaranteed bandwidth promise.
+Actual speed depends on VPS network capacity, source host limits, file size,
+route quality, and the remote server's support for HTTP range requests.
+Increasing connections further can overload some hosts or cause throttling.
+
+After deployment, inspect the service logs and test with multiple independent
+large files from a range-enabled source. For one file, the source must support
+HTTP byte ranges for aria2 to split it across connections.

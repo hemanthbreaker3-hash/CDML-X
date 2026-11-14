@@ -1,0 +1,13 @@
+CDML-X VPS / UPLOAD / UI UPDATE
+
+- Removed the fixed one-second wait before grouped-media flush after uploads;
+  the uploader now yields to the event loop without adding a timed delay.
+- Kept the existing concurrent Telegram transmission configuration. A 100 Mbps
+  network has a theoretical ceiling of 12.5 MB/s before protocol overhead;
+  actual speeds depend on Telegram, route, CPU, disk, and account limits.
+- Updated user-facing task/status layouts to keep details grouped with Telegram
+  HTML blockquotes where appropriate; avoid blindly wrapping arbitrary HTML,
+  which can break nested markup and links.
+- Rewrote README and VPS instructions with one-click deployment for root and
+  sudo-enabled non-root login sessions. A non-root account without sudo cannot
+  perform system package installation or create systemd services.

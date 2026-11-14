@@ -1,0 +1,34 @@
+CDML-X fixes — 2026-11-09
+=========================
+
+1) Critical: NotSupportedExtractionArchive crash after extract
+   - get_base_name() no longer raises by default when the path has no
+     recognised archive suffix (magic-detected archives, odd names).
+   - Falls back to os.path.splitext so post-extract cleanup and captions
+     never crash the task.
+   - raise_on_fail=True kept for duplicate-check paths that need a hard fail.
+   - All three post-extract get_base_name() call sites in proceed_extract
+     are wrapped with try/except fallbacks.
+   - is_archive() now checks basename as well as full path.
+
+2) Download throughput
+   - aria2 per-task options aligned: 16 connections, 16 splits, min-split 1M,
+     piece-length 1M, disk-cache 256M, file-allocation none, continue true.
+   - Global aria2 options in startup.py match the same profile.
+   - Direct downloader uses the same aggressive cache / continue settings.
+
+3) Upload throughput
+   - Default WZGRAM_MAX_CONCURRENT raised from 2 → 8.
+   - Fast-upload media session pool: 4 sessions for files < 256 MiB,
+     6 sessions for larger files (override with WZGRAM_FAST_UPLOAD_SESSIONS,
+     capped 2–8).
+
+4) Status UI
+   - Progress percentage, speed, sizes, status, ETA, engine and mode lines
+     now use <b> + <i> for a clearer premium look.
+   - Empty-status and summary footer text improved with bold/italic.
+
+Deploy: replace the bot tree, restart the process. No schema migration needed.
+Recommended env (optional):
+  WZGRAM_MAX_CONCURRENT=8
+  WZGRAM_FAST_UPLOAD_SESSIONS=6

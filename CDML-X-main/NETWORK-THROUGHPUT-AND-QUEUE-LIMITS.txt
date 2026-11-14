@@ -1,0 +1,43 @@
+CDML-X NETWORK THROUGHPUT AND TASK QUEUE SETTINGS
+================================================
+
+Requested throughput targets
+- Download target: 1000 Mbps = 125 MB/s.
+- Telegram upload target: 2000 Mbps = 2 Gbps = 250 MB/s.
+These are performance targets, not guaranteed rates or artificial rate caps.
+Actual speed is limited by VPS network capacity, source host, Telegram DC and
+account limits, disk I/O, CPU, and the number of simultaneous tasks. The bot does
+not fake progress speed.
+
+Parallel download defaults
+- aria2 max-concurrent-downloads: 8
+- max-connection-per-server: 16
+- split: 16
+- min-split-size: 1M
+- max-overall-download-limit: 0 (unlimited)
+- max-download-limit: 0 (unlimited)
+
+Telegram upload defaults
+- WZGRAM_FAST_UPLOAD_SESSIONS: 8 (maximum supported by this uploader)
+- WZGRAM_MAX_CONCURRENT: 16 (Pyrogram/wzgram transmission concurrency setting)
+- One parallel upload worker runs per media session; all lanes are started
+  together rather than gradually increasing concurrency.
+- Large files use parallel MTProto SaveBigFilePart requests; smaller files and
+  unsupported/error cases retain the native wzgram uploader fallback.
+These values do not impose a 2 Gbps cap or guarantee 2 Gbps throughput. Raising
+parallelism beyond the supported pool is not automatically faster and may
+increase memory use, FloodWaits, or network contention.
+
+Task limits and queues
+- BOT_MAX_TASKS and QUEUE_ALL are global active-task limits; the smaller
+  positive value is enforced. 0 means unlimited.
+- QUEUE_DOWNLOAD and QUEUE_UPLOAD independently cap active download/upload
+  tasks.
+- Per-user maxtask / USER_MAX_TASKS is enforced when queued tasks are released.
+- Internal aria2 segments and Telegram upload workers do not create additional
+  bot tasks and cannot bypass these task limits.
+- The queue scheduler alternates download/upload preference to reduce starvation.
+- Reaching either the global task cap or the direction-specific cap queues work.
+
+Use task limits appropriate for the VPS. Do not set every limit to 0 on a small
+VPS: 0 means unlimited.

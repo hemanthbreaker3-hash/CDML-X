@@ -1,0 +1,63 @@
+VIDEO-TOOL — HEROKU CONTAINER DEPLOYMENT
+========================================
+
+Recommended method: Heroku Container Registry with the included Dockerfile.
+This project needs system tools and a prebuilt Python environment, so do not
+use a plain Python buildpack deploy as a substitute for the container image.
+The included deploy script selects a paid Basic worker dyno to avoid inactivity
+sleep / Eco-hour depletion. Heroku can still restart/cycle dynos or suspend an
+app for billing, account, policy, resource, or platform reasons; no app script
+can prevent those platform-level actions.
+
+PREREQUISITES
+- Heroku CLI installed and logged in: heroku login
+- Docker installed and running: docker info
+- An existing Heroku app (the script does not create one)
+- Required Config Vars set in Heroku Dashboard > App > Settings > Config Vars:
+    BOT_TOKEN
+    OWNER_ID
+    TELEGRAM_API
+    TELEGRAM_HASH
+- DATABASE_URL is strongly recommended for persistent settings and history.
+
+STEPS
+1. Create an app, if needed:
+   heroku create YOUR_APP_NAME --stack container
+
+2. Open the app's Settings > Config Vars and set the four required variables.
+   Add DATABASE_URL for your MongoDB URI. Never put tokens or passwords in
+   this ZIP, Dockerfile, source control, or public logs.
+
+3. From this project directory, run:
+   bash deploy-heroku.sh YOUR_APP_NAME
+
+   The script selects `worker=basic`, releases the container, scales one worker
+   up, and scales an old `web` process down if one exists. A Basic dyno is paid
+   (current published base price: US$7/month) and avoids Eco auto-sleep/hour
+   exhaustion; it does not prevent Heroku's routine dyno cycling.
+
+4. Inspect startup logs:
+   heroku logs --tail -a YOUR_APP_NAME
+
+5. Check worker state:
+   heroku ps -a YOUR_APP_NAME
+
+The deployment script checks that the CLI, Docker engine, app access, and
+required Config Vars exist before building. It requests linux/amd64 because
+Heroku Container Registry supports x86_64 images. It then pushes/releases the
+worker image and scales worker=1.
+
+NOTES
+- The dyno must be allowed to run continuously; Heroku dyno availability and
+  pricing depend on your account/plan.
+- The container uses ephemeral local storage. Use MongoDB/cloud storage for
+  data that must survive restarts or redeploys.
+- This is a worker-only Telegram bot. It does not need a public web dyno.
+- On Heroku, `bot/core/config_manager.py` skips importing local `config.py`
+  whenever Heroku's `DYNO` variable (or `HEROKU_APP_NAME`) is present. Configure
+  settings in Heroku Config Vars; existing local values are ignored at runtime.
+  `config.py` and `config.env` are excluded by `.dockerignore` too.
+- Build success cannot guarantee successful Telegram startup: credentials,
+  MongoDB reachability, upstream image availability, and Heroku plan limits
+  remain external requirements. Dyno filesystems are ephemeral; use MongoDB or
+  remote storage for data that must survive restarts.

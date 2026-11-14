@@ -1,0 +1,25 @@
+CDML-X deployment notes
+=======================
+
+GitHub Codespaces does not run systemd as PID 1. Do not use the VPS installer
+there; use deploy.codespaces.sh from the repository directory.
+
+Export your real values in the terminal (or use Codespaces secrets), then run:
+
+  export BOT_TOKEN='123456:YOUR_REAL_TOKEN'
+  export TELEGRAM_HASH='YOUR_API_HASH'
+  export DATABASE_URL='YOUR_MONGODB_URI'
+  export OWNER_ID='123456789'
+  export TELEGRAM_API='YOUR_NUMERIC_API_ID'
+  chmod +x deploy.codespaces.sh start.sh
+  ./deploy.codespaces.sh
+
+The script requires Python 3, Git, Deno 2.x, and the `ss` utility to be present
+in the Codespace. It starts the PO-token provider and bot without systemd.
+Logs: logs/po-token-provider.log and logs/bot.log.
+
+For a real Linux VPS, use deploy.vps as root. For Heroku, use the Dockerfile and
+Procfile/worker deployment flow, not deploy.vps. Put credentials in Heroku
+Config Vars. No script can guarantee a ban-free deployment or prevent
+platform suspension, billing enforcement, Telegram rate limits, or policy
+enforcement. Avoid unsolicited promotional messages and follow platform rules.

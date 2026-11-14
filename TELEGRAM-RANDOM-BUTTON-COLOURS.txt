@@ -1,0 +1,20 @@
+TELEGRAM NATIVE RANDOM BUTTON COLOURS
+=====================================
+
+Inline keyboard buttons use Telegram's native Bot API button styles:
+  primary = blue
+  success = green
+  danger  = red
+
+ButtonMaker chooses a fresh random style whenever a button is created without
+an explicit semantic style. Explicit success/danger styles are preserved for
+actions where the meaning should remain clear (for example, confirm or close).
+
+Direct inline buttons in verification, force-subscription, API manager,
+social-cookie, and service menus use the same random-style wrapper. This
+includes user settings and bot settings menus built with ButtonMaker.
+
+Telegram clients that support the Bot API button style field render the
+selected colour. Older clients may ignore the style and use their default UI.
+The colour is selected while each keyboard is built, so reopening a menu can
+produce a different colour.

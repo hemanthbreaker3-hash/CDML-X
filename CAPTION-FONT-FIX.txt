@@ -1,0 +1,12 @@
+CDML-X caption font fix
+
+- Applies the selected LEECH_FONT to the final caption, not only the raw filename.
+- Custom LEECH_CAPTION templates now retain the selected font style.
+- Supports the existing settings choices: bold, italic, monospace, spoiler,
+  strikethrough, underline, and none.
+- Forces Telegram HTML parsing on direct and helper-client media uploads and
+  when rebuilding media groups, so the selected formatting is interpreted.
+- Keeps the existing custom caption placeholders and replacement behavior.
+
+Validation performed: Python compileall and ZIP integrity checks.
+A live Telegram send still requires the configured bot and destination chats.

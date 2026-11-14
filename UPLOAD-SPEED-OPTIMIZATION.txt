@@ -1,0 +1,32 @@
+CDML-X Telegram upload throughput update
+========================================
+
+What changed
+------------
+- The parallel MTProto SaveBigFilePart uploader is installed on every wzgram
+  client where the required API is available.
+- Large uploads use up to eight independent media sessions by default, with
+  one worker per session. All lanes start together; concurrency is not slowly
+  ramped up after the upload begins.
+- Upload parts are only counted after Telegram confirms the part. Failed parts
+  are retried and repeated failures fall back to wzgram's native save_file.
+- Progress reports measured aggregate throughput; it does not invent or force
+  a target speed.
+
+Default environment settings
+----------------------------
+WZGRAM_FAST_UPLOAD_SESSIONS=8
+WZGRAM_MAX_CONCURRENT=16
+
+The media-session pool is bounded at eight. These settings are configurable in
+start.sh environment and do not guarantee a particular Mbps rate. Excessive
+parallelism can increase RAM use, FloodWaits, or network contention.
+
+Requested Telegram upload target
+--------------------------------
+2000 Mbps = 2 Gbps = 250 MB/s.
+This is a target only. The VPS uplink, Telegram DC route, account limits, disk
+throughput, CPU, and concurrent tasks must all be able to sustain it.
+
+
+See UPLOAD-SPEED-200MBPS.txt for the 2026-11-09 high-throughput profile.

@@ -1,0 +1,37 @@
+Multi-archive same-folder workflow (-i N -m name -e -ht)
+=======================================================
+
+Example:
+  /l1 -i 2 -m Assassination Classroom S01 720p Multi Audio ESub -e -ht
+  <link or file 1>
+  <link or file 2>   # next message from same user
+
+What was fixed
+--------------
+1. -ht menu runs BEFORE run_multi so every multi task inherits the same
+   merge settings via same_dir["_ht_config"]. Previously multi tasks raced
+   the menu and often skipped merge/extract flags.
+
+2. CLI -e (archive extract) is never cleared by the -ht "content extract"
+   toggle. Menu text now shows Archive Extract (-e) separately.
+
+3. After all archives land in the -m folder:
+   - join split volumes (.001/.002) before extract
+   - extract all archives (second pass for leftovers)
+   - flatten one nested directory level from each zip
+   - keep/enable merge when -m folder is used
+
+4. -m with spaces works (arg_parser joins tokens until the next flag).
+
+Expected flow
+-------------
+1) N archives download into DOWNLOAD_DIR/<mid>/<m name>/
+2) Non-last tasks move files into the surviving task folder and wait
+3) Last task joins volumes → extracts every archive → flattens → -ht merge
+4) Upload extracted (and optionally merged) media
+
+Tips
+----
+- Turn Merge OFF in the -ht menu if you only want every extracted episode
+  uploaded separately (season packs).
+- Keep Merge ON to combine video/audio/subtitle tracks like multi-MKV -ht.

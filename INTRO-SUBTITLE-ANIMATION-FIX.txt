@@ -1,0 +1,12 @@
+INTRO SUBTITLE ANIMATION / TRANSITION FIX
+==========================================
+
+Fixed frame allocation for short intro durations. Entrance and exit effects
+now receive separate, non-overlapping frame ranges, including 1-second and
+2-second intros. Previously, both effects could claim the same complete frame
+range and the exit transition could be skipped.
+
+Intro subtitle rendering continues to apply the configured Unicode font style,
+selected animation, selected transition, and text/image positions to the
+generated transparent overlay. Invalid animation/transition names safely
+fall back to None.

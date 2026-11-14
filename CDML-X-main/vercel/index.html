@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#090d18">
+  <meta name="description" content="CANTARELLABOTS — a clean, fast media hub.">
+  <title>CANTARELLABOTS — Media Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <div class="glow glow-a"></div><div class="glow glow-b"></div>
+  <header class="nav wrap">
+    <a class="brand" href="/" aria-label="CANTARELLABOTS home"><span class="brand-mark">✦</span><span>CANTARELLA<span class="brand-light">BOTS</span></span></a>
+    <div class="nav-right"><span class="live-dot"></span><span>Website online</span><a class="nav-link" href="#features">Explore <span>↗</span></a></div>
+  </header>
+  <main class="wrap">
+    <section class="hero">
+      <div class="eyebrow"><span>✧</span> YOUR MEDIA WORKSPACE</div>
+      <h1>Media management,<br><span class="gradient">made effortless.</span></h1>
+      <p class="hero-copy">A streamlined home for your downloads, streaming links, and media tools — built to stay simple, fast, and reliable.</p>
+      <div class="actions"><a class="button primary" href="#features">Explore features <span>→</span></a><a class="button secondary" href="https://t.me/" target="_blank" rel="noopener">Open Telegram <span>↗</span></a></div>
+      <div class="hero-meta"><span>⚡ Fast by design</span><span>🔒 Privacy-minded</span><span>📱 Mobile friendly</span></div>
+      <div class="orbital" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="core">✦</div><div class="float-chip chip-one">▶ &nbsp; Stream</div><div class="float-chip chip-two">⇩ &nbsp; Download</div><div class="float-chip chip-three">✧ &nbsp; Organize</div></div>
+    </section>
+    <section class="status-panel">
+      <div class="status-copy"><span class="status-icon">✓</span><div><strong>Website is ready</strong><p>Your deployment is serving this page successfully.</p></div></div>
+      <div class="host"><span>ACTIVE HOST</span><strong id="host">Detecting domain…</strong><button id="copy-url" type="button" aria-label="Copy website URL">⧉</button></div>
+    </section>
+    <section class="section" id="features">
+      <div class="section-heading"><div><div class="eyebrow">BUILT FOR YOUR FLOW</div><h2>Everything in its place.</h2></div><p>A clean front door for your bot-powered media workflow.</p></div>
+      <div class="cards">
+        <article class="feature-card"><div class="feature-icon purple">⇩</div><div class="card-kicker">01 / TRANSFER</div><h3>Mirror & Leech</h3><p>Manage supported download and upload workflows through your Telegram bot.</p><span class="card-foot">Smart transfers <span>↗</span></span></article>
+        <article class="feature-card"><div class="feature-icon blue">▶</div><div class="card-kicker">02 / PLAYBACK</div><h3>Stream your media</h3><p>Keep your streaming pages and media links connected to your bot deployment.</p><span class="card-foot">Media access <span>↗</span></span></article>
+        <article class="feature-card"><div class="feature-icon mint">✧</div><div class="card-kicker">03 / TOOLKIT</div><h3>Media utilities</h3><p>Bring file planning, watermarking, and other available tools into one workflow.</p><span class="card-foot">One workspace <span>↗</span></span></article>
+      </div>
+    </section>
+    <section class="deploy-note"><div class="deploy-symbol">⌘</div><div><h3>Separate deployments. One repository.</h3><p>Vercel serves this website. Run the Telegram bot on Render or your VPS, then set the bot's <code>BASE_URL</code> to this website's public Vercel URL so generated links point here.</p></div></section>
+  </main>
+  <footer class="wrap footer"><a class="brand small" href="/"><span class="brand-mark">✦</span><span>CANTARELLA<span class="brand-light">BOTS</span></span></a><span>Made for a smoother media workflow ✨</span><span id="year"></span></footer>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

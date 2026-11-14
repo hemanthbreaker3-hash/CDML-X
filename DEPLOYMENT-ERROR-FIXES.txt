@@ -1,0 +1,32 @@
+CDML-X deployment error fixes
+==============================
+
+Changes in this repair:
+- Added NumPy to requirements.txt. intro_sub_utils imports numpy at module import
+  time, so the missing package previously stopped bot startup.
+- Both root and user deployment scripts explicitly install and import-smoke-test
+  NumPy and the IMDb/MediaInfo Python dependencies.
+- Root deployment now fails honestly if IMDb/MediaInfo handler registration
+  cannot be confirmed, instead of printing deployment complete.
+- setpkgs.sh waits up to 30 seconds for SABnzbd to bind port 8070 and prints
+  process/log diagnostics if it does not.
+
+After extracting this ZIP over the existing project, run:
+  ./deploy.vps
+
+Then inspect:
+  systemctl status cantarellabots_bot --no-pager -l
+  journalctl -u cantarellabots_bot -n 150 --no-pager
+
+External checks still required if warnings persist:
+- MongoDB Atlas: confirm the VPS public IP is allowed in Network Access,
+  the cluster is running, DNS resolves, and outbound TCP 27017 is permitted.
+  Do not paste DATABASE_URL or credentials into public logs.
+- SABnzbd: if port 8070 still does not listen, inspect the SABnzbd log printed
+  by setpkgs.sh and verify configs/sabnzbd/SABnzbd.ini is writable.
+- Historical systemd 203/EXEC: deployment rewrites the service to execute
+  /usr/bin/env bash <project>/start.sh and chmods start.sh executable. If it
+  recurs, verify the configured APP_DIR exists and its filesystem is not mounted
+  noexec.
+
+Only these changed files are included in this repair archive.

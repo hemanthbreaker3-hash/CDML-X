@@ -1,0 +1,37 @@
+CDML-X VPS ONE-CLICK DEPLOYMENT
+================================
+
+> For Ubuntu/Debian Linux VPS only. Root is required for apt packages and
+> systemd. Non-root logins are supported only when sudo privileges are available.
+
+1) Clone or extract the repository and enter its directory.
+
+2) Configure credentials in config.py or export them in the same shell:
+
+   export BOT_TOKEN='REPLACE_WITH_BOT_TOKEN'
+   export TELEGRAM_API='REPLACE_WITH_TELEGRAM_API_ID'
+   export TELEGRAM_HASH='REPLACE_WITH_TELEGRAM_API_HASH'
+   export OWNER_ID='YOUR_TELEGRAM_USER_ID'
+   export DATABASE_URL='REPLACE_WITH_MONGODB_URI'
+   export CMD_SUFFIX='a'
+
+3) Root VPS: run `chmod +x one-click-deploy.sh deploy.vps start.sh && ./one-click-deploy.sh`.
+
+4) Non-root login with sudo: run the same command; the script requests sudo
+   and securely hands off only documented variables. Do NOT use `sudo -E`.
+   If sudo reports that your user is not allowed, ask the VPS administrator/
+   provider to grant permission or run from a root login. The script cannot
+   bypass server-side sudo policy. A non-root account without sudo cannot
+   install system packages or services.
+
+5) Check status: `systemctl status cantarellabots_bot --no-pager -l`
+   Follow logs: `journalctl -u cantarellabots_bot -f`
+
+Optional start buttons: START_REPO_URL, START_REPO_BUTTON, START_UPDATE_URL,
+START_UPDATE_BUTTON, START_DEV_URL, START_DEV_BUTTON. CMD_SUFFIX is optional.
+
+Upload speeds depend on VPS routing, Telegram, CPU, storage, and account limits.
+A 100 Mbps link has a theoretical maximum of 12.5 MB/s before overhead; no
+software patch can guarantee that rate.
+
+Never share or commit real tokens, API hashes, or database credentials.

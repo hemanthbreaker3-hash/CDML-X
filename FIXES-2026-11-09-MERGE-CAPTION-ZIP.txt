@@ -1,0 +1,25 @@
+CDML-X fixes — merge caption languages + multi-zip extract
+==========================================================
+
+1) Caption languages empty after merge / split upload
+   - TelegramUploader now pre-caches media info (duration, quality, languages,
+     subtitles) from the original file before parts are uploaded.
+   - Split parts (.001 / .partN) reuse that cache instead of probing a non-media
+     chunk, so {languages} / {languagesr} / {subtitles} stay filled.
+   - merge_tracks adds -map_metadata 0 -map_chapters 0 so stream tags survive
+     multi-video concat.
+   - proceed_merge harvests audio/subtitle language tags from the primary
+     source video when external track langs are missing.
+
+2) Multi-zip merge with -e (same pattern as MKV -i -m -ht)
+   Usage examples:
+     /leech -i 2 -m SeriesName -e -ht <zip_or_link>
+     /leech -i 2 -m SeriesName -e <zip_link>   # -m already enables manual_merge
+
+   Flow:
+     - Multi tasks collect both archives into the -m folder
+     - -e extracts every archive (second pass for leftovers)
+     - Nested single folders from each zip are flattened so merge sees all media
+     - -m / -ht merge pipeline combines videos + optional audio/subs like MKV
+
+No DB migration required. Restart the bot after deploying.

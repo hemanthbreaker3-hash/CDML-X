@@ -1,0 +1,21 @@
+Thumbnail upload repair (2026-11-05)
+
+- TelegramUploader now resolves the saved per-user THUMBNAIL path and honors
+  THUMBNAIL_MODE (custom/auto/none) instead of relying only on a fallback path.
+- Custom thumbnails are normalized to Telegram's upload thumbnail constraints
+  (JPEG, max 320x320, under 200 KB) before being sent.
+- User-provided thumbnails are retained as a higher-resolution master (up to
+  1280x1280) when configured through the user settings photo/document/link flow.
+- When HD_THUMBNAIL is enabled, video uploads send the small thumbnail and the
+  separate high-resolution video_cover; the same cover path is used for both
+  helper-client and direct bot uploads.
+- Direct photos, image documents, and image URLs share the persistent thumbnail
+  path used by the leech uploader.
+
+Telegram Bot API reference: https://core.telegram.org/bots/api#sendvideo
+The API distinguishes `thumbnail` (max 320x320, under 200 KB) from `cover`,
+which is the custom video cover field. HD cover is therefore implemented using
+`video_cover`, not by violating the thumbnail field's hard limits.
+
+Validation: Python compileall passed for the bot package. A live Telegram upload
+was not run because this environment has no Telegram credentials or bot runtime.

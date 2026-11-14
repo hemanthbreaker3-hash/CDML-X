@@ -1,0 +1,12 @@
+CDML-X Audio Split / User Settings / Auto Thumbnail patch
+
+Changes:
+- Audio Split language suffix and language-preset controls are visible in Video Processing Tools settings even while automatic splitting is off.
+- Removed nested f-string/backslash expression from the Video Processing Tools settings text for Python compatibility.
+- Audio Split maps tagged tracks by detected language first, then uses unlabelled audio tracks in order only as a fallback; unavailable variants are skipped and outputs remain zipped.
+- Auto thumbnails default to enabled for users who have not explicitly selected a thumbnail mode; a user's custom thumbnail remains preferred when present. Users can still explicitly choose Auto, Custom, Random, or None.
+- Python source compilation and deploy.vps/start.sh shell syntax checks passed in the build environment.
+
+Notes:
+- Untagged audio tracks cannot be identified with certainty; the fallback maps them by track order and logs a warning.
+- Full Telegram/VPS integration tests require the deployment's real credentials and media files.

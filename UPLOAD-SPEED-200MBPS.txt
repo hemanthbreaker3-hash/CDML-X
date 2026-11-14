@@ -1,0 +1,37 @@
+CDML-X Telegram upload — 200 Mbps target profile
+================================================
+
+What was changed
+----------------
+1. wzgram[fast] parallel SaveBigFilePart path (bot/core/tg_client.py):
+   - Media session pool: 6 sessions for files < 64 MiB, 8 sessions for larger.
+   - Override with WZGRAM_FAST_UPLOAD_SESSIONS (2–8).
+   - 4 concurrent workers per media session (saturates MTProto lanes).
+   - Part size: 512 KiB (Telegram protocol max for big files).
+   - Fast path starts at 5 MiB (was 10 MiB).
+   - Progress updates every 150 ms; safer progress lock under concurrency.
+   - FloodWait / session rotation retries improved.
+
+2. Client transmission concurrency:
+   - WZGRAM_MAX_CONCURRENT default raised to 8.
+
+3. Status UI:
+   - Removed <blockquote> wrappers from /status progress blocks so text
+     stays fully expanded (no collapsible blockquote).
+
+Recommended environment
+-----------------------
+WZGRAM_MAX_CONCURRENT=8
+WZGRAM_FAST_UPLOAD_SESSIONS=8
+USE_HYPER=true
+
+Reality check
+-------------
+200 Mbps = 25 MB/s is a TARGET, not a guarantee. Actual speed depends on:
+- VPS uplink to Telegram DC
+- Account / premium limits and FloodWaits
+- Disk read speed and CPU
+- Concurrent tasks competing for bandwidth
+
+Use a Premium user session (USER_SESSION_STRING) for 4 GB parts and best routes.
+Keep only wzgram[fast]>=3.1.5 installed (already in requirements.txt).
